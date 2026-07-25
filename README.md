@@ -42,8 +42,6 @@
 | **JupyterLab + PySpark + Delta** (optional) | ✅ Real | `docker compose --profile notebook up` |
 | Secrets ACLs, Repos/Git, multi-language notebooks, DBT/pipeline tasks, Model Registry, Vector Search, Dashboards | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED` |
 
-Full endpoint-by-endpoint detail: [FEATURES.md](FEATURES.md).
-
 ## Known Gaps
 
 These are **deliberate**, not oversights — minilake targets one developer running it locally, not a shared/multi-tenant server:
@@ -209,8 +207,6 @@ docker compose --profile notebook up -d
 
 It demonstrates registering an EXTERNAL Delta table in minilake, writing to it with real PySpark (`df.write.format("delta")`), and reading the same data back through minilake's SQL Statement Execution API — proving DataFrame writes and SQL reads see the same real data.
 
-For a deep-dive into every endpoint, see [Features & Implementation Status](FEATURES.md).
-
 ---
 
 ## Testing & Development
@@ -242,7 +238,6 @@ This triggers [`release.yml`](.github/workflows/release.yml), which re-runs the 
 
 ---
 
-## Documentation Links
+## Contributing
 
-- [Features & Implementation Status](FEATURES.md)
-- [Test Coverage Plan](COVERAGE_PLAN.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project structure, how to add a new API group, and the PR checklist.
