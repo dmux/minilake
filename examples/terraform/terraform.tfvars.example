@@ -1,0 +1,10 @@
+# Example Terraform variables for minilake
+# Copy to terraform.tfvars and adjust as needed
+
+# minilake running locally (HTTP)
+databricks_host  = "http://localhost:8000"
+databricks_token = "dev"
+
+# Or for HTTPS:
+# databricks_host  = "https://localhost:8443"
+# databricks_token = "dev"

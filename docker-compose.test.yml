@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Service for E2E tests (runs minilake)
+  minilake-test-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: minilake-test-server
+    ports:
+      - "8123:8000"
+    environment:
+      MINILAKE_DATA_DIR: /data
+      MINILAKE_HOST: 0.0.0.0
+      MINILAKE_PORT: 8000
+      MINILAKE_DOCKER_VOLUME: minilake_test_data
+      MINILAKE_SPARK_IMAGE: apache/spark-py:v3.4.0
+      MINILAKE_CLUSTER_START_DELAY: "0.3"
+      MINILAKE_CLUSTER_TERMINATE_DELAY: "0.2"
+    volumes:
+      - minilake_test_data:/data
+      # Docker socket: lets minilake spawn sibling containers to run job tasks with real Spark.
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_minilake/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+  # Run unit tests + integration tests
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: minilake-test-runner
+    depends_on:
+      minilake-test-server:
+        condition: service_healthy
+    environment:
+      MINILAKE_DATA_DIR: /data
+      PYTHONUNBUFFERED: 1
+    volumes:
+      - .:/opt/minilake
+      - minilake_test_data:/data
+      - test_reports:/opt/minilake/htmlcov
+    working_dir: /opt/minilake
+
+volumes:
+  minilake_test_data:
+    name: minilake_test_data
+    driver: local
+  test_reports:
+    driver: local

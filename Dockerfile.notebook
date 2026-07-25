@@ -1,0 +1,22 @@
+FROM jupyter/pyspark-notebook:spark-3.5.0
+
+USER root
+
+# Delta Lake, matching this image's bundled Spark 3.5.0.
+RUN pip install --no-cache-dir delta-spark==3.1.0 databricks-sdk
+
+# Pre-resolve and cache the Delta Lake jars at build time so the first cell a
+# user runs doesn't need network access / Maven resolution.
+RUN python3 -c "\
+from delta import configure_spark_with_delta_pip; \
+from pyspark.sql import SparkSession; \
+builder = SparkSession.builder.appName('warmup') \
+    .config('spark.sql.extensions', 'io.delta.sql.DeltaSparkSessionExtension') \
+    .config('spark.sql.catalog.spark_catalog', 'org.apache.spark.sql.delta.catalog.DeltaCatalog'); \
+spark = configure_spark_with_delta_pip(builder).getOrCreate(); \
+spark.stop()"
+
+COPY notebooks/minilake_delta_quickstart.ipynb /home/${NB_USER}/work/minilake_delta_quickstart.ipynb
+RUN chown ${NB_UID}:${NB_GID} /home/${NB_USER}/work/minilake_delta_quickstart.ipynb
+
+USER ${NB_UID}

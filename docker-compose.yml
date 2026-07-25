@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  minilake:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: minilake
+    ports:
+      - "8000:8000"  # HTTP
+      - "8443:8443"  # HTTPS
+    environment:
+      MINILAKE_DATA_DIR: /data
+      MINILAKE_HOST: 0.0.0.0
+      MINILAKE_PORT: 8000
+      # Named volume backing /data, shared with sibling job-execution containers.
+      MINILAKE_DOCKER_VOLUME: minilake_data
+      # Image used to execute job tasks (notebook_task / spark_python_task) in a real Spark container.
+      MINILAKE_SPARK_IMAGE: apache/spark-py:v3.4.0
+    volumes:
+      - minilake_data:/data
+      - ./certs:/etc/minilake:ro
+      # Docker socket: lets minilake spawn sibling containers to run job tasks with real Spark.
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_minilake/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: real JupyterLab + PySpark + Delta Lake, sharing minilake's data
+  # volume. Not started by default — `docker compose --profile notebook up`.
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.notebook
+    container_name: minilake-jupyter
+    profiles: ["notebook"]
+    depends_on:
+      minilake:
+        condition: service_healthy
+    ports:
+      - "8888:8888"
+    environment:
+      # No token/password: this is a local-dev-only convenience, not for
+      # exposing the notebook server beyond your own machine.
+      JUPYTER_TOKEN: ""
+    volumes:
+      - minilake_data:/data
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+
+volumes:
+  minilake_data:
+    name: minilake_data
+    driver: local

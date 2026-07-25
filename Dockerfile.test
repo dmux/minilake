@@ -1,0 +1,41 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/minilake
+
+# Install system dependencies + uv
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir uv
+
+# Copy project files
+COPY pyproject.toml pyproject.toml
+COPY src/ src/
+COPY tests/ tests/
+COPY README.md README.md
+
+# Install minilake + all dev dependencies
+RUN uv pip install -e . --python /usr/local/bin/python && \
+    uv pip install \
+    pytest>=8.0 \
+    pytest-xdist>=3.6 \
+    httpx>=0.27 \
+    databricks-sdk>=0.40 \
+    pytest-cov \
+    pytest-json-report \
+    pytest-asyncio \
+    deltalake>=0.19 \
+    pandas>=2.0 \
+    pyarrow>=14.0 \
+    --python /usr/local/bin/python
+
+# Create data directory for tests
+RUN mkdir -p /data
+
+# Set test environment
+ENV MINILAKE_DATA_DIR=/data
+ENV PYTHONUNBUFFERED=1
+
+# Run tests
+CMD ["pytest", "tests/", "-v", "--cov=minilake", "--cov-report=html", "--cov-report=term-missing", "--tb=short"]

@@ -1,0 +1,69 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "minilake"
+version = "1.0.0"
+description = "A local Databricks API emulator backed by DuckDB."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Rafael Sales", email = "rafael.sales@gmail.com" }
+]
+urls = { Repository = "https://github.com/dmux/minilake", Issues = "https://github.com/dmux/minilake/issues" }
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "duckdb>=1.0",
+    "python-multipart>=0.0.9",
+    "aiofiles>=24.1",
+    "docker>=7.1",
+    "pyarrow>=14.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-xdist>=3.6",
+    "httpx>=0.27",
+    "databricks-sdk>=0.40",
+    "ruff>=0.6",
+    "pre-commit>=3.8",
+    # Lightweight (no JVM/Spark) real Delta Lake writer, used only to validate
+    # minilake's delta_scan()-based EXTERNAL table read path in tests. Actual
+    # users write Delta tables with real Spark (jobs or the notebook service).
+    "deltalake>=0.19",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+]
+
+[project.scripts]
+minilake = "minilake.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/minilake"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "--dist=loadfile -v"
+markers = [
+    "serial: tests that cannot run in parallel (mutate global state)",
+    "crud: create/read/update/delete operations",
+    "workflow: multi-step end-to-end flows",
+    "error: error handling and edge cases",
+    "smoke: quick sanity checks",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # line too long (handled by formatter)
