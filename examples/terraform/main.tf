@@ -25,55 +25,65 @@ resource "databricks_schema" "main" {
   comment      = "Schema created by Terraform"
 }
 
+# SQL warehouse used to run the DDL behind databricks_sql_table
+resource "databricks_sql_endpoint" "main" {
+  name         = "terraform_demo_wh"
+  cluster_size = "2X-Small"
+}
+
 # Create a table
-resource "databricks_table" "users" {
-  catalog_name = databricks_catalog.main.name
-  schema_name  = databricks_schema.main.name
-  name         = "users"
-  table_type   = "MANAGED"
+resource "databricks_sql_table" "users" {
+  catalog_name       = databricks_catalog.main.name
+  schema_name        = databricks_schema.main.name
+  name               = "users"
+  table_type         = "MANAGED"
+  data_source_format = "DELTA"
+  warehouse_id       = databricks_sql_endpoint.main.id
 
   column {
-    name      = "id"
-    type      = "INT"
-    nullable  = false
+    name     = "id"
+    type     = "int"
+    nullable = false
   }
 
   column {
-    name      = "email"
-    type      = "VARCHAR"
-    nullable  = false
+    name     = "email"
+    type     = "string"
+    nullable = false
   }
 
   column {
-    name      = "created_at"
-    type      = "TIMESTAMP"
-    nullable  = false
+    name     = "created_at"
+    type     = "timestamp"
+    nullable = false
   }
 }
 
 # Create another table
-resource "databricks_table" "orders" {
-  catalog_name = databricks_catalog.main.name
-  schema_name  = databricks_schema.main.name
-  name         = "orders"
-  table_type   = "MANAGED"
+resource "databricks_sql_table" "orders" {
+  catalog_name       = databricks_catalog.main.name
+  schema_name        = databricks_schema.main.name
+  name               = "orders"
+  table_type         = "MANAGED"
+  data_source_format = "DELTA"
+  warehouse_id       = databricks_sql_endpoint.main.id
 
   column {
-    name      = "id"
-    type      = "INT"
-    nullable  = false
+    name     = "id"
+    type     = "int"
+    nullable = false
   }
 
   column {
-    name      = "user_id"
-    type      = "INT"
-    nullable  = false
+    name     = "user_id"
+    type     = "int"
+    nullable = false
   }
 
   column {
-    name      = "amount"
-    type      = "DECIMAL(10,2)"
-    nullable  = false
+    name     = "amount"
+    type     = "decimal(10,2)"
+    nullable = false
   }
 }
 
@@ -89,8 +99,8 @@ output "schema_name" {
 
 output "tables" {
   value = [
-    databricks_table.users.full_name,
-    databricks_table.orders.full_name,
+    "${databricks_sql_table.users.catalog_name}.${databricks_sql_table.users.schema_name}.${databricks_sql_table.users.name}",
+    "${databricks_sql_table.orders.catalog_name}.${databricks_sql_table.orders.schema_name}.${databricks_sql_table.orders.name}",
   ]
   description = "Full names of created tables"
 }

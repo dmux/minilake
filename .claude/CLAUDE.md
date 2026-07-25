@@ -4,7 +4,26 @@ Project instructions for Claude Code when working on the minilake repository.
 
 ## Testing Requirements
 
-### ✅ All Features Must Have Tests Using databricks-sdk
+### Always Run Tests via Docker
+
+Tests **must** be run against the Dockerized stack, never against a bare `uv run pytest` hitting a local subprocess server:
+
+```bash
+# 1. Build the local image (picks up source changes)
+docker compose -f docker-compose.test.yml build
+
+# 2. Run the full suite (spins up minilake-test-server, then test-runner against it)
+docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test-runner
+
+# 3. Tear down
+docker compose -f docker-compose.test.yml down -v
+```
+
+`tests/conftest.py` detects Docker Compose mode via `MINILAKE_DATA_DIR=/data` (set in `docker-compose.test.yml`) and points the SDK at `http://minilake-test-server:8000` instead of spawning a local `uv run minilake` subprocess. This is also the only mode where Spark/Delta-backed tests (`docker_executor`, job tasks, `test_delta_tables.py`) have real Docker-socket access to spawn sibling containers — running pytest locally without Docker silently degrades or fails those tests.
+
+Always rebuild the image (`docker compose -f docker-compose.test.yml build`) before running when source under `src/minilake/` changed — the image bakes in the source at build time, so a stale image silently tests old code.
+
+### All Features Must Have Tests Using databricks-sdk
 
 Every API feature/endpoint implemented in minilake **must** have an accompanying test that:
 
@@ -273,8 +292,10 @@ uv sync
 # Run server (dev)
 uv run minilake --port 8000
 
-# Run tests
-uv run pytest tests/ -v
+# Run tests (always via Docker — see Testing Requirements above)
+docker compose -f docker-compose.test.yml build
+docker compose -f docker-compose.test.yml up --abort-on-container-exit --exit-code-from test-runner
+docker compose -f docker-compose.test.yml down -v
 
 # Format code
 uv run ruff format src/ tests/
