@@ -2,7 +2,7 @@
   <img src="minilake_logo.png" alt="minilake — Local Databricks API Emulator" width="400"/>
 </p>
 
-<h1 align="center">minilake</h1>
+<h1 align="center">MiniLake</h1>
 <p align="center"><strong>Free, open-source local Databricks emulator for offline development and testing.</strong></p>
 <p align="center">Real SQL & Spark execution · Unity Catalog hierarchy · Databricks SDK compatible · Terraform compatible · MIT licensed</p>
 
@@ -21,7 +21,7 @@
 
 ---
 
-**minilake** is a free, local Databricks API emulator — a single-developer tool for testing `databricks-sdk`/Terraform code against real SQL, real Delta Lake, and real Job execution, without paying for cloud compute.
+**MiniLake** is a free, local Databricks API emulator — a single-developer tool for testing `databricks-sdk`/Terraform code against real SQL, real Delta Lake, and real Job execution, without paying for cloud compute.
 
 ## Supported Services
 
