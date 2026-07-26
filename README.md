@@ -107,6 +107,16 @@ docker run -p 8000:8000 \
   ghcr.io/dmux/minilake:latest
 ```
 
+### Verbose Logging
+
+By default, minilake only prints its startup banner (ASCII logo + port + enabled services) and stays quiet otherwise — no per-service load logs, no per-request access logs, no SQL/job execution traces. Set `MINILAKE_VERBOSE=1` to get full `INFO`-level logs instead:
+
+```bash
+docker run -p 8000:8000 \
+  -e MINILAKE_VERBOSE=1 \
+  ghcr.io/dmux/minilake:latest
+```
+
 ### Surviving a Restart
 
 By default, all state (catalogs, jobs, secrets, clusters, ...) lives in memory and is lost when the container stops — real files (Workspace, DBFS, EXTERNAL Delta data) always survive, but metadata doesn't. Set `MINILAKE_PERSIST=1` to save a JSON snapshot on shutdown and restore it on the next startup, as long as `MINILAKE_DATA_DIR` points at a volume that survives the restart too:
@@ -230,11 +240,13 @@ pytest tests/ --cov=minilake --cov-report=html
 - **Tagging a release** builds and publishes automatically — no manual Docker build/push needed:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-This triggers [`release.yml`](.github/workflows/release.yml), which re-runs the test suite as a gate, then builds a multi-arch (`amd64`/`arm64`) image and publishes it to **GitHub Container Registry** as `ghcr.io/dmux/minilake:1.0.0`, `ghcr.io/dmux/minilake:1.0`, and `ghcr.io/dmux/minilake:latest`, and creates a [GitHub Release](https://github.com/dmux/minilake/releases) with auto-generated notes. Tags must match `vX.Y.Z` (semver).
+This triggers [`release.yml`](.github/workflows/release.yml), which re-runs the test suite as a gate, then builds a multi-arch (`amd64`/`arm64`) image and publishes it to **GitHub Container Registry** as `ghcr.io/dmux/minilake:X.Y.Z`, `ghcr.io/dmux/minilake:X.Y`, and `ghcr.io/dmux/minilake:latest`, and creates a [GitHub Release](https://github.com/dmux/minilake/releases) with auto-generated notes. Tags must match `vX.Y.Z` (semver).
+
+The badges at the top of this README (release version, CI status, release status) are live [shields.io](https://shields.io) badges that query the GitHub API directly — they always reflect the latest tag/workflow run with no manual README edit required after a release.
 
 ---
 
