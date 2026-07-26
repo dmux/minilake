@@ -1,5 +1,12 @@
 version: '3.8'
 
+# Explicit project name: keeps this stack's containers/networks fully
+# isolated from docker-compose.yml's "minilake" project. Without this, both
+# files share the same directory-inferred project name ("minilake"), and
+# running this file's `up`/`down` can affect (or, with --remove-orphans,
+# delete) the unrelated dev container from docker-compose.yml.
+name: minilake-test
+
 services:
   # Service for E2E tests (runs minilake)
   minilake-test-server:
