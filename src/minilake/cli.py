@@ -10,10 +10,12 @@ from minilake.app import create_app
 from minilake.config import settings
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO if settings.verbose else logging.WARNING,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_UVICORN_LOG_LEVEL = "info" if settings.verbose else "warning"
 
 
 def main() -> int:
@@ -51,7 +53,8 @@ def main() -> int:
             port=args.port,
             factory=True,
             reload=args.reload,
-            log_level="info",
+            log_level=_UVICORN_LOG_LEVEL,
+            access_log=settings.verbose,
         )
         return 0
     except KeyboardInterrupt:
@@ -69,7 +72,7 @@ def run_server(
     reload: bool = False,
     ssl_keyfile: str | None = None,
     ssl_certfile: str | None = None,
-    log_level: str = "info",
+    log_level: str = _UVICORN_LOG_LEVEL,
 ) -> None:
     """Run minilake server programmatically.
 
@@ -106,6 +109,7 @@ def run_server(
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
             log_level=log_level,
+            access_log=settings.verbose,
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")

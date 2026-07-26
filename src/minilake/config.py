@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Example: MINILAKE_SERVICES=sql_statements,sql_warehouses,unity_catalog
     services: str = os.getenv("MINILAKE_SERVICES", "")
 
+    # Verbose logging is off by default (only the startup banner + warnings/errors
+    # show); set MINILAKE_VERBOSE=1 to get full INFO-level logs (per-service load,
+    # per-request access logs, SQL execution details, ...).
+    verbose: bool = os.getenv("MINILAKE_VERBOSE", "").lower() in ("1", "true", "yes")
+
     # Tunable delays (configurable via /_minilake/config at runtime)
     cluster_start_delay_seconds: float = float(os.getenv("MINILAKE_CLUSTER_START_DELAY", "1"))
     cluster_terminate_delay_seconds: float = float(os.getenv("MINILAKE_CLUSTER_TERMINATE_DELAY", "0.5"))

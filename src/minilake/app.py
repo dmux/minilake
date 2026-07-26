@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import textwrap
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -20,12 +21,56 @@ logger = logging.getLogger(__name__)
 # Global DuckDB pool (initialized on app startup)
 _duckdb_pool: DuckDBPool | None = None
 
+BANNER_ART = r"""
+ __  __ _       _ _          _
+|  \/  (_)_ __ (_) |    __ _| | _____
+| |\/| | | '_ \| | |   / _` | |/ / _ \
+| |  | | | | | | | |__| (_| |   <  __/
+|_|  |_|_|_| |_|_|_____\__,_|_|\_\___|"""
+
+# Friendly display names for the startup banner's service list. "catchall"
+# is deliberately excluded — it's the 501 fallback for unimplemented
+# endpoints, not a real emulated service.
+_SERVICE_DISPLAY_NAMES = {
+    "identity": "Identity (SCIM)",
+    "dbfs": "DBFS",
+    "files": "Files",
+    "sql_statements": "SQL Statements",
+    "sql_warehouses": "SQL Warehouses",
+    "unity_catalog": "Unity Catalog",
+    "workspace": "Workspace",
+    "clusters": "Clusters",
+    "jobs": "Jobs",
+    "secrets": "Secrets",
+    "permissions": "Permissions",
+}
+
+
+def _render_banner() -> str:
+    """Build the startup banner: ASCII logo + the services actually enabled
+    for this run (respects MINILAKE_SERVICES filtering — see services/__init__.py)."""
+    enabled = [name for name, _ in get_enabled_routers() if name in _SERVICE_DISPLAY_NAMES]
+    display_names = [_SERVICE_DISPLAY_NAMES[name] for name in enabled]
+    services_block = textwrap.fill(
+        ", ".join(display_names),
+        width=76,
+        initial_indent="  Services: ",
+        subsequent_indent="            ",
+    )
+    return f"{BANNER_ART}\n\n A local Databricks API emulator — Port {settings.port}\n{services_block}\n"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: startup and shutdown."""
     global _duckdb_pool
 
+    # Printed directly (not via logger) so it always shows regardless of
+    # MINILAKE_VERBOSE — it's the one startup indicator meant to survive quiet mode.
+    # flush=True: stdout is fully block-buffered with no TTY attached (e.g. in
+    # Docker), so without it the banner sits unflushed in the buffer and never
+    # reaches `docker logs` for a long-running process.
+    print(_render_banner(), flush=True)
     logger.info("minilake starting up...")
     _duckdb_pool = DuckDBPool(settings.data_dir)
     set_duckdb_pool(_duckdb_pool)
