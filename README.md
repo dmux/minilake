@@ -32,7 +32,7 @@
 | **SQL Statement Execution** | ✅ Real | Real DuckDB; `JSON_ARRAY`/`ARROW_STREAM`/`CSV`, `INLINE`/`EXTERNAL_LINKS` |
 | **SQL Warehouses** | ✅ Real | Full CRUD + lifecycle |
 | **Jobs** | ✅ Real | Sibling Docker container execution (Spark) or subprocess fallback; real DAG scheduling (`depends_on`/`run_if`); `sql_task.file` |
-| **Workspace** | ✅ Real | File-backed notebook/script storage (SOURCE/PYTHON only) |
+| **Workspace** | ✅ Real | File-backed notebook/script storage; raw-bytes `workspace-files` file sync powers `databricks bundle deploy` / `bundle run` (incl. Job resources) |
 | **DBFS & Files API** | ✅ Real | File-backed storage, chunked upload |
 | **Secrets** | ✅ Real | Real CRUD; values only resolvable inside job env vars, never via direct API (matches real Databricks) |
 | **Clusters** | ✅ Real state machine | CRUD + timed lifecycle transitions; **no real Spark compute** (by design) |
@@ -140,6 +140,42 @@ docker run -p 8000:8000 \
 
 If a Docker socket isn't available (e.g. restricted CI runners), set `MINILAKE_JOB_EXECUTOR=subprocess` to fall back to running task scripts as a plain local subprocess instead — no Docker required, at the cost of not matching the real Spark runtime exactly.
 
+### Native HTTPS / TLS (no proxy)
+
+The Databricks CLI expects an `https://` host. Instead of putting a TLS proxy
+(caddy/nginx) in front, minilake can serve HTTPS itself. Set `MINILAKE_TLS=1` and
+it serves TLS on `:8443` **in addition to** plain HTTP on `:8000`:
+
+```bash
+docker run -p 8000:8000 -p 8443:8443 \
+  -e MINILAKE_TLS=1 \
+  -v minilake_data:/data \
+  ghcr.io/dmux/minilake:latest
+```
+
+Two certificate modes:
+
+| Mode | How | Trusting it on the client |
+|---|---|---|
+| **Auto self-signed** (default when TLS on) | generated once under `<data_dir>/certs/minilake.crt` | **macOS:** import into the keychain (`security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db <cert>`). **Linux:** `export SSL_CERT_FILE=<data_dir>/certs/minilake.crt` |
+| **Bring-your-own** | `MINILAKE_SSL_CERTFILE` + `MINILAKE_SSL_KEYFILE` (e.g. a cert from an internal CA your machine already trusts) | nothing extra — the CA is already trusted |
+
+`MINILAKE_TLS_SAN` (default `localhost,127.0.0.1,0.0.0.0`) controls the SANs baked
+into the auto-generated cert; it's kept under 398 days so macOS accepts it and is
+regenerated automatically as it nears expiry.
+
+> **macOS note:** the Databricks CLI (Go) ignores `SSL_CERT_FILE` on macOS — it
+> only trusts the system keychain there. So on macOS use the keychain import or
+> the bring-your-own path; `SSL_CERT_FILE` is the Linux/CI route.
+
+Point your profile at the HTTPS endpoint:
+
+```ini
+[DEFAULT]
+host  = https://localhost:8443
+token = dev
+```
+
 ---
 
 ## Using with Databricks SDK (Python)
@@ -203,6 +239,32 @@ resource "databricks_sql_endpoint" "compute" {
   cluster_size     = "Small"
 }
 ```
+
+### Databricks Asset Bundles (`databricks bundle deploy` / `bundle run`)
+
+Asset Bundles work against minilake end-to-end. The CLI uses the Workspace
+file-sync endpoints (`workspace-files/import-file` + read) to upload the bundle's
+`files/` and store its Terraform state, and the Terraform provider creates
+`resources` through minilake's real REST APIs. Point your `databricks.yml` target at
+the local host:
+
+```yaml
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: http://localhost:8000
+```
+
+```bash
+databricks bundle deploy -t dev
+databricks bundle run my_job -t dev   # Job resources run for real (real Spark)
+```
+
+**Job** resources deploy and execute for real (a `spark_python_task` runs on real
+Spark in a sibling container). Other resource types (pipelines/DLT, serving, ...)
+depend on APIs minilake doesn't emulate and aren't supported yet. A complete,
+runnable demo bundle lives in the sibling [`databricks/`](../databricks) project.
 
 ---
 

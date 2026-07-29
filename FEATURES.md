@@ -372,22 +372,26 @@ after each item, run via
 
 - `POST /api/2.0/workspace/import` — Import notebook/script (base64 content)
 - `GET /api/2.0/workspace/export` — Export notebook/script (base64 content)
-- `GET /api/2.0/workspace/get-status` — Get object metadata
+- `GET /api/2.0/workspace/get-status` — Get object metadata (`NOTEBOOK` vs `FILE`)
 - `GET /api/2.0/workspace/list` — List directory contents
 - `POST /api/2.0/workspace/mkdirs` — Create directory
 - `POST /api/2.0/workspace/delete` — Delete object (file or directory tree)
+- `POST /api/2.0/workspace-files/import-file/{path}` — Import an arbitrary file (raw bytes) — used by the Databricks CLI's WSFS filer during `bundle deploy`
+- `GET /api/2.0/workspace-files/{path}` — Read an arbitrary file (raw bytes); 404 when missing, so the CLI's state-pull treats it as "no existing state"
 
 **Key Features:**
 
 - ✅ **Real files on disk** under `data/workspace/` — not fake blobs
 - ✅ Round-trips exact bytes (import then export returns identical content)
 - ✅ Backs Jobs' `notebook_task`/`spark_python_task` (see below): the file a job executes is a real file written here
+- ✅ **`databricks bundle deploy` file sync** works: the `workspace-files/import-file`/`export-file` pair stores any file type (`.pyi`, `.whl`, `terraform.tfstate`, deploy locks); such files report `object_type=FILE`, notebooks report `object_type=NOTEBOOK`
 
 **Scope (intentional):**
 
-- Only `format=SOURCE`, `language=PYTHON` is supported (Databricks-source `.py` notebooks) — other formats/languages return `501 NOT_IMPLEMENTED`, per the project's "fail loudly, don't fake it" philosophy
+- The classic `/workspace/import` endpoint only accepts `format=SOURCE`, `language=PYTHON` (Databricks-source `.py` notebooks) — other formats/languages return `501 NOT_IMPLEMENTED`, per the project's "fail loudly, don't fake it" philosophy. The raw-bytes `workspace-files/import-file` endpoint has no such restriction (any file type).
+- **Databricks Asset Bundles**: `databricks bundle deploy` + `bundle run` work end-to-end. File sync and workspace state I/O go through the endpoints above; `resources` are created by the Databricks Terraform provider, which drives minilake's real REST APIs. **Jobs** resources deploy and run for real (a `spark_python_task` executes on real Spark in a sibling container — verified via `bundle run`). Other resource types (pipelines/DLT, model serving, etc.) depend on APIs minilake doesn't emulate and are not supported.
 
-**Status:** ✅ Complete and tested (`tests/test_workspace.py`)
+**Status:** ✅ Complete and tested (`tests/test_workspace.py`, `tests/test_workspace_files.py`)
 
 ---
 
@@ -621,6 +625,12 @@ The following 30+ SDK service modules are **not emulated** and return `501 {"err
   "status": 501
 }
 ```
+
+> **Note on `bundles`:** `databricks bundle deploy` + `bundle run` work — the CLI
+> drives the Workspace file-sync endpoints (`workspace-files/import-file` + read)
+> plus minilake's real REST APIs. **Jobs** resources deploy and run for real; other
+> resource types (pipelines/DLT, serving, ...) depend on APIs minilake doesn't
+> emulate. See the Workspace section above.
 
 **Rationale:** Provides clear feedback instead of confusing 404s. Users know they've hit an API that's explicitly out of scope.
 
