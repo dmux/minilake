@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   minilake:
     build:
@@ -8,11 +6,18 @@ services:
     container_name: minilake
     ports:
       - "8000:8000"  # HTTP
-      - "8443:8443"  # HTTPS
+      # HTTPS — uncomment together with MINILAKE_TLS below to serve TLS natively
+      # (stop any proxy already holding :8443, e.g. caddy, first).
+      # - "8443:8443"
     environment:
       MINILAKE_DATA_DIR: /data
       MINILAKE_HOST: 0.0.0.0
       MINILAKE_PORT: 8000
+      # Native HTTPS on :8443 (drop the external TLS proxy). Auto-generates a
+      # self-signed cert under /data/certs; trust it on the client via keychain
+      # import (macOS) or SSL_CERT_FILE (Linux). To bring your own CA-signed cert,
+      # set MINILAKE_SSL_CERTFILE / MINILAKE_SSL_KEYFILE (e.g. under /etc/minilake).
+      # MINILAKE_TLS: "1"
       # Named volume backing /data, shared with sibling job-execution containers.
       MINILAKE_DOCKER_VOLUME: minilake_data
       # Image used to execute job tasks (notebook_task / spark_python_task) in a real Spark container.

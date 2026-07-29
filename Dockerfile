@@ -27,8 +27,9 @@ ENV PYTHONUNBUFFERED=1
 ENV MINILAKE_DATA_DIR=/data
 ENV MINILAKE_HOST=0.0.0.0
 ENV MINILAKE_PORT=8000
-ENV MINILAKE_SSL_CERT=/etc/minilake/cert.pem
-ENV MINILAKE_SSL_KEY=/etc/minilake/key.pem
+# Native HTTPS is opt-in: set MINILAKE_TLS=1 to also serve TLS on :8443 (an
+# auto-generated self-signed cert lands under /data/certs). To bring your own
+# cert, set MINILAKE_SSL_CERTFILE / MINILAKE_SSL_KEYFILE.
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \

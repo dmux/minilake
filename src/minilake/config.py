@@ -38,6 +38,22 @@ class Settings(BaseSettings):
     # DuckDB settings
     duckdb_memory_limit: str = os.getenv("MINILAKE_DUCKDB_MEMORY_LIMIT", "4GB")
 
+    # TLS / native HTTPS — lets the Databricks CLI (which wants an https:// host)
+    # talk to minilake without a separate TLS proxy. When enabled, minilake serves
+    # HTTPS on `https_port` *in addition to* plain HTTP on `port`.
+    tls_enabled: bool = os.getenv("MINILAKE_TLS", "").lower() in ("1", "true", "yes")
+    https_port: int = int(os.getenv("MINILAKE_HTTPS_PORT", "8443"))
+    # Bring-your-own cert (e.g. issued by an internal CA your machine already
+    # trusts). If unset and TLS is enabled, a self-signed cert is auto-generated.
+    ssl_certfile: Optional[Path] = (
+        Path(os.environ["MINILAKE_SSL_CERTFILE"]) if os.getenv("MINILAKE_SSL_CERTFILE") else None
+    )
+    ssl_keyfile: Optional[Path] = (
+        Path(os.environ["MINILAKE_SSL_KEYFILE"]) if os.getenv("MINILAKE_SSL_KEYFILE") else None
+    )
+    # Comma-separated Subject Alternative Names baked into the auto-generated cert.
+    tls_san: str = os.getenv("MINILAKE_TLS_SAN", "localhost,127.0.0.1,0.0.0.0")
+
     class Config:
         env_prefix = "MINILAKE_"
         extra = "allow"
@@ -60,6 +76,16 @@ class Settings(BaseSettings):
         if not enabled:
             return True
         return service_name in enabled
+
+    @property
+    def tls_san_list(self) -> list[str]:
+        """SAN hostnames/IPs for the auto-generated TLS cert."""
+        return [s.strip() for s in self.tls_san.split(",") if s.strip()]
+
+    @property
+    def cert_dir(self) -> Path:
+        """Directory holding the auto-generated TLS cert (under the data volume)."""
+        return self.data_dir / "certs"
 
     @property
     def resolved_snapshot_path(self) -> Path:

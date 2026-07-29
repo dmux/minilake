@@ -1,11 +1,13 @@
 """Command-line interface for minilake."""
 
 import argparse
+import asyncio
 import logging
 import sys
 
 import uvicorn
 
+from minilake import tls
 from minilake.app import create_app
 from minilake.config import settings
 
@@ -40,6 +42,20 @@ def main() -> int:
         action="store_true",
         help="Enable auto-reload on file changes (dev mode)",
     )
+    parser.add_argument(
+        "--tls",
+        action="store_true",
+        default=settings.tls_enabled,
+        help="Also serve HTTPS (auto-generates a self-signed cert if none is provided)",
+    )
+    parser.add_argument(
+        "--https-port",
+        type=int,
+        default=settings.https_port,
+        help=f"HTTPS port when --tls is set (default: {settings.https_port})",
+    )
+    parser.add_argument("--ssl-certfile", type=str, default=None, help="TLS certificate (PEM); overrides auto-gen")
+    parser.add_argument("--ssl-keyfile", type=str, default=None, help="TLS private key (PEM); overrides auto-gen")
 
     args = parser.parse_args()
 
@@ -47,6 +63,9 @@ def main() -> int:
     logger.info(f"Data directory: {settings.data_dir}")
 
     try:
+        if args.tls:
+            return _run_with_tls(args)
+
         uvicorn.run(
             "minilake.app:create_app",
             host=args.host,
@@ -63,6 +82,56 @@ def main() -> int:
     except Exception as e:
         logger.error(f"Failed to start minilake: {e}")
         return 1
+
+
+def _run_with_tls(args) -> int:
+    """Serve HTTP (args.port) and HTTPS (args.https_port) concurrently.
+
+    A single shared app instance backs both servers; only the HTTP server runs
+    the ASGI lifespan (`lifespan="off"` on the HTTPS one) so startup/shutdown
+    logic runs exactly once.
+    """
+    from pathlib import Path
+
+    from minilake.config import settings as _s
+
+    cert_arg = Path(args.ssl_certfile) if args.ssl_certfile else _s.ssl_certfile
+    key_arg = Path(args.ssl_keyfile) if args.ssl_keyfile else _s.ssl_keyfile
+    cert_path, key_path = tls.resolve_cert(cert_arg, key_arg, _s.cert_dir, _s.tls_san_list)
+
+    logger.info(f"Serving HTTP on {args.host}:{args.port} and HTTPS on {args.host}:{args.https_port}")
+
+    app = create_app()
+    servers = [
+        uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=args.host,
+                port=args.port,
+                lifespan="on",
+                log_level=_UVICORN_LOG_LEVEL,
+                access_log=settings.verbose,
+            )
+        ),
+        uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=args.host,
+                port=args.https_port,
+                ssl_certfile=str(cert_path),
+                ssl_keyfile=str(key_path),
+                lifespan="off",
+                log_level=_UVICORN_LOG_LEVEL,
+                access_log=settings.verbose,
+            )
+        ),
+    ]
+
+    async def _serve() -> None:
+        await asyncio.gather(*(s.serve() for s in servers))
+
+    asyncio.run(_serve())
+    return 0
 
 
 def run_server(
