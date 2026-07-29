@@ -16,8 +16,16 @@ Usage with Terraform:
     }
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from minilake.app import create_app
 from minilake.cli import run_server
 
-__version__ = "0.1.0"
-__all__ = ["create_app", "run_server"]
+try:
+    # Single source of truth: the version declared in pyproject.toml, read from
+    # the installed package metadata.
+    __version__ = version("minilake")
+except PackageNotFoundError:  # not installed (e.g. running from a bare checkout)
+    __version__ = "0.0.0+unknown"
+
+__all__ = ["create_app", "run_server", "__version__"]

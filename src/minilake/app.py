@@ -4,8 +4,15 @@ import asyncio
 import logging
 import textwrap
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import FastAPI
+
+try:
+    # Single source of truth: the version declared in pyproject.toml.
+    __version__ = version("minilake")
+except PackageNotFoundError:  # not installed (e.g. running from a bare checkout)
+    __version__ = "0.0.0+unknown"
 
 from minilake.admin import register_service_state_functions, set_duckdb_pool
 from minilake.admin import router as admin_router
@@ -121,7 +128,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="minilake",
         description="A local Databricks API emulator backed by DuckDB",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
