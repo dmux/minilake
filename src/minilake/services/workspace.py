@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
 
 from minilake.config import settings
 from minilake.errors import DatabricksError
@@ -58,7 +58,7 @@ def _normalize(path: str) -> str:
 def _resolve(path: str) -> Path:
     """Resolve a workspace path to a real filesystem path, guarding traversal."""
     normalized = _normalize(path)
-    root = _workspace_root()
+    root = _workspace_root().resolve()
     resolved = (root / normalized.lstrip("/")).resolve()
     if resolved != root and root not in resolved.parents:
         raise DatabricksError(
@@ -121,6 +121,7 @@ async def import_object(req: ImportWorkspaceRequest) -> dict:
     now_ms = int(time.time() * 1000)
     existing = _state["objects"].get(normalized)
     _state["objects"][normalized] = {
+        "object_type": ObjectType.NOTEBOOK.value,
         "object_id": existing["object_id"] if existing else _next_id(),
         "language": Language.PYTHON.value,
         "created_at": existing["created_at"] if existing else now_ms,
@@ -129,6 +130,72 @@ async def import_object(req: ImportWorkspaceRequest) -> dict:
 
     logger.info(f"Imported workspace object: {normalized}")
     return {}
+
+
+@router.post("/workspace-files/import-file/{path:path}")
+async def import_file(
+    path: str,
+    request: Request,
+    overwrite: Optional[bool] = Query(True),
+) -> dict:
+    """Import an arbitrary file into the workspace (WSFS filer / `bundle deploy`).
+
+    Unlike `/workspace/import` (JSON + base64, notebooks only), this endpoint moves
+    raw bytes directly in the HTTP body and stores any file type (`.pyi`, `.whl`,
+    `terraform.tfstate`, deploy locks). Used by the Databricks CLI when it syncs a
+    bundle's files into the workspace. The captured path keeps its `/Workspace/...`
+    prefix literal so `export-file`/`get-status` address the same bytes.
+    """
+    normalized = _normalize("/" + path)
+    file_path = _resolve(normalized)
+
+    if file_path.exists() and not file_path.is_dir() and not overwrite:
+        raise DatabricksError(
+            error_code="RESOURCE_ALREADY_EXISTS",
+            message=f"Path '{normalized}' already exists",
+            status_code=400,
+        )
+
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    body = await request.body()
+    file_path.write_bytes(body)
+
+    now_ms = int(time.time() * 1000)
+    existing = _state["objects"].get(normalized)
+    _state["objects"][normalized] = {
+        "object_type": ObjectType.FILE.value,
+        "object_id": existing["object_id"] if existing else _next_id(),
+        "created_at": existing["created_at"] if existing else now_ms,
+        "modified_at": now_ms,
+    }
+
+    logger.info(f"Imported workspace file: {normalized}")
+    return {}
+
+
+@router.get("/workspace-files/{path:path}")
+async def read_file(
+    path: str,
+    direct_download: Optional[bool] = Query(None),  # accepted, ignored
+) -> Response:
+    """Read a workspace file as raw bytes (WSFS filer read path).
+
+    The Databricks CLI reads files back via `GET /api/2.0/workspace-files/{path}`
+    (e.g. pulling `state/deployment.json` / `terraform.tfstate` during
+    `bundle deploy`). A missing file must return 404 so the CLI treats it as
+    "no existing state" and proceeds with a first deploy.
+    """
+    normalized = _normalize("/" + path)
+    file_path = _resolve(normalized)
+
+    if not file_path.exists() or file_path.is_dir():
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Path '{normalized}' not found",
+            status_code=404,
+        )
+
+    return Response(content=file_path.read_bytes(), media_type="application/octet-stream")
 
 
 @router.get("/workspace/export", response_model=ExportResponse)
@@ -168,10 +235,11 @@ async def get_status(path: str = Query(...)) -> ObjectInfo:
         return ObjectInfo(object_type=ObjectType.DIRECTORY, path=normalized)
 
     meta = _state["objects"].get(normalized, {})
+    obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))
     return ObjectInfo(
-        object_type=ObjectType.NOTEBOOK,
+        object_type=obj_type,
         path=normalized,
-        language=Language.PYTHON,
+        language=Language.PYTHON if obj_type == ObjectType.NOTEBOOK else None,
         object_id=meta.get("object_id"),
         size=file_path.stat().st_size,
         created_at=meta.get("created_at"),
@@ -205,11 +273,12 @@ async def list_objects(path: str = Query(...)) -> ListWorkspaceResponse:
             objects.append(ObjectInfo(object_type=ObjectType.DIRECTORY, path=child_path))
         else:
             meta = _state["objects"].get(child_path, {})
+            obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))
             objects.append(
                 ObjectInfo(
-                    object_type=ObjectType.NOTEBOOK,
+                    object_type=obj_type,
                     path=child_path,
-                    language=Language.PYTHON,
+                    language=Language.PYTHON if obj_type == ObjectType.NOTEBOOK else None,
                     object_id=meta.get("object_id"),
                     size=child.stat().st_size,
                     created_at=meta.get("created_at"),
