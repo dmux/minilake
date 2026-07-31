@@ -2,7 +2,7 @@
 
 import pytest
 
-from minilake.app import create_app
+from minilake.app import __version__, _render_banner, create_app
 from minilake.errors import DatabricksError
 
 
@@ -38,6 +38,20 @@ def test_app_has_routers():
     assert len(admin_routes) > 0
 
     print(f"✓ App has {len(route_paths)} routes")
+
+
+@pytest.mark.smoke
+def test_banner_shows_version():
+    """The startup banner reports the running minilake version.
+
+    It's the first thing shown in the logs, so it's how you tell which build a
+    container is actually running.
+    """
+    banner = _render_banner()
+
+    assert f"v{__version__}" in banner
+    assert __version__ != "0.0.0+unknown", "version should resolve from package metadata"
+    print(f"✓ Banner reports v{__version__}")
 
 
 @pytest.mark.smoke

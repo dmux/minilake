@@ -54,6 +54,25 @@ class Settings(BaseSettings):
     # Comma-separated Subject Alternative Names baked into the auto-generated cert.
     tls_san: str = os.getenv("MINILAKE_TLS_SAN", "localhost,127.0.0.1,0.0.0.0")
 
+    # MCP server — exposes minilake's capabilities to LLM agents over Streamable HTTP at
+    # `mcp_path`. Off by default: the tools execute SQL and spawn Docker containers, and
+    # minilake has no auth, so enabling it on a published port hands out near-shell access.
+    mcp_enabled: bool = os.getenv("MINILAKE_MCP", "").lower() in ("1", "true", "yes")
+    mcp_path: str = os.getenv("MINILAKE_MCP_PATH", "/mcp")
+    # Host header allowlist for the MCP endpoint's DNS-rebinding protection. Empty (the
+    # default) disables the check outright — appropriate for a local emulator, and required
+    # for any non-localhost hostname (e.g. the Docker test stack's `minilake-test-server`),
+    # which the SDK would otherwise reject with `421 Invalid Host header`.
+    mcp_allowed_hosts: str = os.getenv("MINILAKE_MCP_ALLOWED_HOSTS", "")
+    # Default row cap for the run_sql tool — keeps a SELECT * on a big table from
+    # flooding the agent's context.
+    mcp_max_rows: int = int(os.getenv("MINILAKE_MCP_MAX_ROWS", "200"))
+    # Character cap for job logs returned by the run_python_script tool. spark-submit
+    # emits Ivy resolution plus every INFO line from every Spark subsystem: a 15-line
+    # PySpark script routinely produces >150k characters, which alone can blow an agent's
+    # context. The full logs stay available through get_run_output.
+    mcp_max_log_chars: int = int(os.getenv("MINILAKE_MCP_MAX_LOG_CHARS", "8000"))
+
     class Config:
         env_prefix = "MINILAKE_"
         extra = "allow"
@@ -83,6 +102,11 @@ class Settings(BaseSettings):
         return [s.strip() for s in self.tls_san.split(",") if s.strip()]
 
     @property
+    def mcp_allowed_hosts_list(self) -> list[str]:
+        """Host header allowlist for the MCP endpoint (empty = protection disabled)."""
+        return [h.strip() for h in self.mcp_allowed_hosts.split(",") if h.strip()]
+
+    @property
     def cert_dir(self) -> Path:
         """Directory holding the auto-generated TLS cert (under the data volume)."""
         return self.data_dir / "certs"
@@ -95,3 +119,29 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def ensure_writable_dir(path: Path) -> None:
+    """Create `path` (with parents), world-writable all the way up to data_dir.
+
+    Sibling containers spawned for real execution (job containers, a user's own
+    Spark/Jupyter session) each run as their own image's UID/GID convention —
+    e.g. the Spark images use GID=0, while Jupyter's `jovyan` uses GID=100 — so
+    there is no single group that reliably covers every writer. Since data_dir
+    is a local-dev scratch area (not multi-tenant, no untrusted network access),
+    the pragmatic fix is world-writable (0777) rather than trying to track every
+    image's UID/GID convention. Python's `Path.mkdir(parents=True, mode=...)`
+    only applies `mode` to the leaf directory, so intermediate directories are
+    chmod'd explicitly here too.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    current = path
+    root = settings.data_dir
+    while True:
+        try:
+            current.chmod(0o777)
+        except OSError:
+            pass
+        if current == root or root not in current.parents:
+            break
+        current = current.parent

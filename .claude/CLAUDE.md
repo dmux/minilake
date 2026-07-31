@@ -214,6 +214,35 @@ def test_schema_under_catalog(workspace_client, catalog):  # fixture injected
     assert schema.catalog_name == catalog.name
 ```
 
+## MCP Server (`src/minilake/mcp/`)
+
+Optional layer (`MINILAKE_MCP=1`, extra `minilake[mcp]`) exposing minilake to LLM agents at
+`/mcp`. Conventions to preserve when touching it:
+
+- **One tool module per service group** in `mcp/tools/`, each exporting
+  `register(mcp, client)` — mirrors the `services/` contract. Register it in
+  `_TOOL_MODULES` in `mcp/server.py` keyed by its owning service, so `MINILAKE_SERVICES`
+  filtering is honoured automatically.
+- **SDK names stay in `server.py` and `client.py` only.** Tool modules touch `@mcp.tool()`
+  and `MinilakeClient`, nothing else. We're pinned to `mcp>=1.29,<2`; version 2.0 renames
+  `FastMCP` to `MCPServer` and drops `mcp.server.fastmcp`, and this boundary keeps that
+  migration to two files.
+- **Tools call minilake over its own ASGI stack** (`httpx.ASGITransport`), never by
+  importing service functions. That reuses the real error handlers, so tool errors match
+  what an SDK client sees.
+- **Two mounting invariants** (both verified, both easy to break): the MCP app is mounted at
+  `/` and must be registered **last**; and `mcp.session_manager.run()` must be entered from
+  `app.py`'s lifespan, because a mounted sub-app's own lifespan never runs.
+- **Tool descriptions are load-bearing.** They are how the model learns that SQL is DuckDB
+  and how PySpark addresses tables. `tests/mcp_server/test_capabilities.py` asserts none are
+  blank and names are unique (the SDK drops duplicate registrations silently).
+
+Tests live in `tests/mcp_server/` — *not* `tests/mcp/`, which would shadow the SDK's
+top-level `mcp` package. They drive a real MCP `ClientSession` over Streamable HTTP and use
+`pytest.mark.anyio` rather than `pytest.mark.asyncio`: pytest-asyncio finalizes
+async-generator fixtures in a different task than it creates them in, which trips the MCP
+client's anyio task group.
+
 ## Code Organization
 
 ### Services

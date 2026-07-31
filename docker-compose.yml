@@ -18,10 +18,18 @@ services:
       # import (macOS) or SSL_CERT_FILE (Linux). To bring your own CA-signed cert,
       # set MINILAKE_SSL_CERTFILE / MINILAKE_SSL_KEYFILE (e.g. under /etc/minilake).
       # MINILAKE_TLS: "1"
+      # MCP server for LLM agents, served at http://localhost:8000/mcp. Commented out by
+      # default: the tools execute SQL and spawn Docker containers, and minilake has no
+      # auth, so enabling it on a published port is close to handing out shell access.
+      # MINILAKE_MCP: "1"
+      # Host-header allowlist for the MCP endpoint. Empty (default) disables the check —
+      # right for a local emulator. Set it when reaching minilake under another hostname
+      # and you do want the check, e.g. "minilake,localhost".
+      # MINILAKE_MCP_ALLOWED_HOSTS: ""
       # Named volume backing /data, shared with sibling job-execution containers.
       MINILAKE_DOCKER_VOLUME: minilake_data
       # Image used to execute job tasks (notebook_task / spark_python_task) in a real Spark container.
-      MINILAKE_SPARK_IMAGE: apache/spark-py:v3.4.0
+      MINILAKE_SPARK_IMAGE: apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
     volumes:
       - minilake_data:/data
       - ./certs:/etc/minilake:ro

@@ -17,7 +17,10 @@ urls = { Repository = "https://github.com/dmux/minilake", Issues = "https://gith
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
-    "pydantic>=2.7",
+    # Floor raised from 2.7 to satisfy the `mcp` extra (mcp>=1.29 needs pydantic>=2.11);
+    # keeping a single floor avoids a resolution that silently works without the extra
+    # and breaks with it.
+    "pydantic>=2.11",
     "pydantic-settings>=2.3",
     "duckdb>=1.0",
     "python-multipart>=0.0.9",
@@ -27,11 +30,20 @@ dependencies = [
     "cryptography>=42.0",
 ]
 
+[project.optional-dependencies]
+# MCP server (exposes minilake's capabilities to LLM agents at /mcp). Optional so the
+# base install stays free of the SDK's transitive deps (jsonschema, pyjwt[crypto],
+# sse-starlette, ...). Pinned to the 1.x line: 2.0 renames FastMCP -> MCPServer and
+# removes mcp.server.fastmcp outright, so it is a rewrite, not a bump.
+mcp = ["mcp>=1.29,<2"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-xdist>=3.6",
+    "pytest-asyncio>=0.24",
     "httpx>=0.27",
+    "mcp>=1.29,<2",
     "databricks-sdk>=0.40",
     "ruff>=0.6",
     "pre-commit>=3.8",
@@ -53,6 +65,10 @@ packages = ["src/minilake"]
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "--dist=loadfile -v"
+# Strict mode: async tests must be marked explicitly, so pytest-asyncio never silently
+# takes over the existing sync (databricks-sdk) tests.
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "serial: tests that cannot run in parallel (mutate global state)",
     "crud: create/read/update/delete operations",

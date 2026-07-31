@@ -13,8 +13,9 @@ COPY pyproject.toml pyproject.toml
 COPY src/ src/
 COPY README.md README.md
 
-# Install minilake
-RUN pip install --no-cache-dir -e .
+# Install minilake with the MCP extra. Baked into the image so MINILAKE_MCP=1 is all that's
+# needed to turn the MCP server on; the extra stays optional for PyPI installs.
+RUN pip install --no-cache-dir -e ".[mcp]"
 
 # Create data directory
 RUN mkdir -p /data

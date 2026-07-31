@@ -21,9 +21,14 @@ services:
       MINILAKE_HOST: 0.0.0.0
       MINILAKE_PORT: 8000
       MINILAKE_DOCKER_VOLUME: minilake_test_data
-      MINILAKE_SPARK_IMAGE: apache/spark-py:v3.4.0
+      MINILAKE_SPARK_IMAGE: apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
       MINILAKE_CLUSTER_START_DELAY: "0.3"
       MINILAKE_CLUSTER_TERMINATE_DELAY: "0.2"
+      # MCP server on /mcp, for tests/mcp_server/. The allowed-hosts default (empty)
+      # disables DNS-rebinding protection, which is required here: the test runner reaches
+      # the server as `minilake-test-server:8000`, a Host the SDK's loopback-only default
+      # allowlist would reject with 421 before any tool ran.
+      MINILAKE_MCP: "1"
     volumes:
       - minilake_test_data:/data
       # Docker socket: lets minilake spawn sibling containers to run job tasks with real Spark.

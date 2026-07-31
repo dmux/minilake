@@ -73,6 +73,11 @@ def minilake_server() -> Generator[str, None, None]:
     # Get project root (relative to this conftest.py)
     project_root = str(Path(__file__).parent.parent)
 
+    # MCP is off by default in production; the test server always enables it so
+    # tests/mcp/ has an endpoint to talk to (docker-compose.test.yml does the same for
+    # Docker mode).
+    server_env = {**os.environ, "MINILAKE_MCP": "1"}
+
     proc = subprocess.Popen(
         [
             "uv",
@@ -86,6 +91,7 @@ def minilake_server() -> Generator[str, None, None]:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=project_root,
+        env=server_env,
     )
 
     # Wait for server to be ready

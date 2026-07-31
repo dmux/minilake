@@ -16,7 +16,7 @@ COPY tests/ tests/
 COPY README.md README.md
 
 # Install minilake + all dev dependencies
-RUN uv pip install -e . --python /usr/local/bin/python && \
+RUN uv pip install -e ".[mcp]" --python /usr/local/bin/python && \
     uv pip install \
     pytest>=8.0 \
     pytest-xdist>=3.6 \
