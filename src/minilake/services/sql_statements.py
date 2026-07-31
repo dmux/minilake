@@ -95,8 +95,82 @@ def _strip_databricks_ddl_clauses(sql: str) -> str:
     everything after it, e.g. `LOCATION`, `TBLPROPERTIES`) that the
     Databricks Terraform provider's generated DDL includes but DuckDB's
     parser rejects.
+
+    `USING DELTA ... LOCATION` is handled before this, by `_classify_create_external`
+    — stripping it here would silently turn an external table into a plain DuckDB one.
     """
     return _CREATE_TABLE_USING_CLAUSE_RE.sub(")", sql)
+
+
+# `CREATE TABLE cat.sch.tbl (cols) USING <format> [LOCATION '...'] [TBLPROPERTIES ...]`
+_CREATE_USING_RE = re.compile(
+    r"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+    r"(?P<name>[\w.\"`]+)\s*"
+    r"\((?P<columns>.*)\)\s*"
+    r"USING\s+(?P<format>\w+)"
+    r"(?P<tail>.*)\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+_LOCATION_RE = re.compile(r"\bLOCATION\s+'(?P<path>[^']+)'", re.IGNORECASE)
+
+
+def _classify_create_external(sql: str):
+    """If `sql` is `CREATE TABLE ... USING DELTA LOCATION '<path>'`, return the
+    UC registration it implies — else None.
+
+    This is the most Databricks-native way to create a table, and until now it was the
+    one that silently did the wrong thing: the `USING`/`LOCATION` tail was regex-stripped
+    along with everything after it, leaving a plain DuckDB table at no location that UC
+    never heard of, and reporting success.
+    """
+    match = _CREATE_USING_RE.match(sql.strip())
+    if not match or match.group("format").upper() != "DELTA":
+        return None
+
+    location = _LOCATION_RE.search(match.group("tail"))
+    if not location:
+        # `USING DELTA` with no LOCATION is a managed table; DuckDB handles it once the
+        # tail is stripped.
+        return None
+
+    parts = [p.strip().strip('"').strip("`") for p in match.group("name").split(".")]
+    if len(parts) != 3:
+        raise DatabricksError(
+            error_code="INVALID_REQUEST",
+            message=("CREATE TABLE ... USING DELTA LOCATION requires a three-part name: catalog.schema.table"),
+            status_code=400,
+        )
+
+    return parts, _parse_ddl_columns(match.group("columns")), location.group("path")
+
+
+def _parse_ddl_columns(columns_sql: str) -> List[dict]:
+    """Parse a DDL column list into `[{"name": ..., "type_text": ...}]`.
+
+    Deliberately shallow: it splits on top-level commas and takes the first token as the
+    name and the rest as the type, so `ARRAY<INT>` and `DECIMAL(10,2)` survive. Column
+    constraints beyond the type are dropped — the Delta log is the real schema anyway.
+    """
+    from minilake.uc_types import _split_top_level
+
+    columns = []
+    for part in _split_top_level(columns_sql):
+        name, _, type_text = part.strip().partition(" ")
+        name = name.strip().strip('"').strip("`")
+        type_text = type_text.strip()
+        if not name or not type_text:
+            raise DatabricksError(
+                error_code="INVALID_REQUEST",
+                message=f"Could not parse column definition '{part.strip()}'",
+                status_code=400,
+            )
+        # Drop trailing constraints: `id INT NOT NULL` -> `INT`.
+        for marker in (" NOT NULL", " COMMENT ", " DEFAULT "):
+            idx = type_text.upper().find(marker)
+            if idx != -1:
+                type_text = type_text[:idx].strip()
+        columns.append({"name": name, "type_text": type_text})
+    return columns
 
 
 def _rewrite_sql_for_duckdb(sql: str) -> str:
@@ -185,8 +259,8 @@ def _ensure_delta_tree_writable(storage_location: str) -> None:
     Whoever wrote the table's *existing* files (deltalake/delta-rs as root, a
     previous Spark run as uid 185, ...) may have created `_delta_log/` and
     friends with restrictive permissions. The container about to write here
-    runs as its own arbitrary non-root UID (see unity_catalog.py's
-    `_ensure_writable_dir`, which only covers directory creation time) — this
+    runs as its own arbitrary non-root UID (see config.py's
+    `ensure_writable_dir`, which only covers directory creation time) — this
     covers every later write too, since Delta commits create *new* files
     (`_delta_log/000...N.json`) each time.
     """
@@ -380,6 +454,55 @@ async def _execute_delta_write(
     return [], []
 
 
+async def _apply_default_namespace(conn, catalog: Optional[str], schema_name: Optional[str]):
+    """Point the connection at `catalog[.schema]`, returning what to restore afterwards."""
+    if not catalog and not schema_name:
+        return None
+    try:
+        current = conn.execute("SELECT current_catalog(), current_schema()").fetchone()
+        target = f'"{catalog}"' if catalog else f'"{current[0]}"'
+        if schema_name:
+            target = f'{target}."{schema_name}"'
+        conn.execute(f"USE {target}")
+        return current
+    except Exception as e:
+        # A bad default is the caller's problem to see in the statement error, not a
+        # reason to fail before the statement even runs.
+        logger.warning(f"Could not set default namespace {catalog}.{schema_name}: {e}")
+        return None
+
+
+def _restore_default_namespace(conn, previous) -> None:
+    if not previous:
+        return
+    try:
+        conn.execute(f'USE "{previous[0]}"."{previous[1]}"')
+    except Exception as e:
+        logger.warning(f"Could not restore default namespace: {e}")
+
+
+async def _register_external_delta(
+    parts: List[str], columns: List[dict], storage_location: str
+) -> tuple[List[str], List[List[Any]]]:
+    """Register `CREATE TABLE ... USING DELTA LOCATION` as an EXTERNAL UC table."""
+    from minilake.models.unity_catalog import ColumnInfo, CreateTableRequest
+    from minilake.services import unity_catalog
+
+    catalog_name, schema_name, table_name = parts
+    await unity_catalog.create_table(
+        CreateTableRequest(
+            name=table_name,
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            table_type="EXTERNAL",
+            data_source_format="DELTA",
+            storage_location=storage_location,
+            columns=[ColumnInfo(**c) for c in columns],
+        )
+    )
+    return [], []
+
+
 async def _execute_sql_real(
     warehouse_id: str,
     sql: str,
@@ -392,6 +515,11 @@ async def _execute_sql_real(
     so that Unity Catalog tables are accessible to all warehouses.
     """
     sql = _debacktick_identifiers(sql)
+
+    create_external = _classify_create_external(sql)
+    if create_external is not None:
+        return await _register_external_delta(*create_external)
+
     sql = _strip_databricks_ddl_clauses(sql)
 
     delta_write = _classify_delta_write(sql)
@@ -422,6 +550,11 @@ async def _execute_sql_real(
     sql = _rewrite_sql_for_duckdb(sql)
 
     async with lock:
+        # Apply the statement's default catalog/schema so unqualified names resolve, the
+        # way `USE` would on a warehouse. The UC connection is shared by every warehouse,
+        # so this must be restored afterwards — it is safe only because the lock we hold
+        # serializes all statement execution.
+        previous = await _apply_default_namespace(conn, catalog, schema_name)
         try:
             # Execute the SQL
             logger.debug(f"Executing SQL on warehouse {warehouse_id}: {sql}")
@@ -444,6 +577,8 @@ async def _execute_sql_real(
                 message=f"SQL execution failed: {str(e)}",
                 status_code=400,
             )
+        finally:
+            _restore_default_namespace(conn, previous)
 
 
 def _serialize_chunk(columns: List[str], rows: List[List[Any]], fmt: str) -> tuple[bytes, str]:

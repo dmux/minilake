@@ -274,6 +274,19 @@ def _resolve_secret_env_vars(spark_env_vars: Optional[Dict[str, str]]) -> Option
     return resolved
 
 
+def _maven_packages(task: Task) -> Optional[List[str]]:
+    """Maven coordinates from a task's `libraries`, for `spark-submit --packages`.
+
+    This is how a script gets a format the base Spark image doesn't ship — Delta above all
+    (`io.delta:delta-spark_2.12:3.2.1`, see docker_executor.DEFAULT_DELTA_PACKAGE). Only
+    `maven` entries are honoured; other library kinds are accepted and ignored.
+    """
+    if not task.libraries:
+        return None
+    coordinates = [lib.maven.coordinates for lib in task.libraries if lib.maven]
+    return coordinates or None
+
+
 async def _execute_task(task: Task, argv: List[str]) -> RunTaskInfo:
     """Execute a single task for real. Returns its terminal RunTaskInfo."""
     now_ms = int(time.time() * 1000)
@@ -340,6 +353,7 @@ async def _execute_task(task: Task, argv: List[str]) -> RunTaskInfo:
         args=static_args + argv,
         timeout_seconds=task.timeout_seconds or docker_executor.DEFAULT_TIMEOUT_SECONDS,
         env=resolved_env,
+        packages=_maven_packages(task),
     )
     end_ms = int(time.time() * 1000)
 

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WarehouseState(str, Enum):
@@ -54,10 +54,15 @@ class ListWarehousesResponse(BaseModel):
 class ExecuteStatementRequest(BaseModel):
     """Request to execute a SQL statement."""
 
+    # The real API sends `schema`; without the alias that key was silently dropped and
+    # the default namespace never applied. `populate_by_name` keeps `schema_name` working
+    # for callers that already use it.
+    model_config = ConfigDict(populate_by_name=True)
+
     warehouse_id: str
     statement: str
     catalog: Optional[str] = None
-    schema_name: Optional[str] = None
+    schema_name: Optional[str] = Field(None, alias="schema")
     disposition: Optional[str] = "INLINE"  # INLINE or EXTERNAL_LINKS
     format: Optional[str] = "JSON_ARRAY"  # JSON_ARRAY, ARROW, CSV
 

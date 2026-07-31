@@ -13,7 +13,7 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.catalog import DataSourceFormat, TableType
+from databricks.sdk.service.catalog import ColumnInfo, DataSourceFormat, TableType
 from deltalake import write_deltalake
 
 
@@ -32,6 +32,82 @@ def delta_catalog_and_schema(workspace_client: WorkspaceClient):
         workspace_client.catalogs.delete(name=cat_name)
     except Exception:
         pass
+
+
+@pytest.mark.workflow
+def test_external_delta_columns_come_from_the_delta_log(delta_catalog_and_schema, workspace_client: WorkspaceClient):
+    """A declared schema that disagrees with the files must lose to the files.
+
+    Declaring INTEGER over a Delta table whose log says `long` is the exact mistake that
+    prompted this: it was accepted silently, and GET reported no columns at all, so
+    nothing ever contradicted it.
+    """
+    cat, schema = delta_catalog_and_schema
+    table_name = f"drift_{uuid4().hex[:6]}"
+    storage_location = f"/data/delta/{cat.name}/{schema.name}/{table_name}"
+
+    # int64 in pandas -> `long` in the Delta log.
+    write_deltalake(
+        storage_location,
+        pd.DataFrame({"id": [1, 2], "nome": ["a", "b"]}),
+        mode="overwrite",
+    )
+
+    table = workspace_client.tables.create(
+        name=table_name,
+        catalog_name=cat.name,
+        schema_name=schema.name,
+        table_type=TableType.EXTERNAL,
+        data_source_format=DataSourceFormat.DELTA,
+        storage_location=storage_location,
+        columns=[
+            ColumnInfo(name="id", type_text="INTEGER"),  # wrong on purpose
+            ColumnInfo(name="nome", type_text="STRING"),
+        ],
+    )
+
+    fetched = workspace_client.tables.get(full_name=table.full_name)
+    by_name = {c.name: c for c in fetched.columns}
+
+    assert by_name["id"].type_name.value == "LONG", "the Delta log, not the declaration"
+    assert by_name["nome"].type_name.value == "STRING"
+
+
+@pytest.mark.workflow
+def test_create_table_using_delta_location_registers_external(
+    delta_catalog_and_schema, workspace_client: WorkspaceClient
+):
+    """`CREATE TABLE ... USING DELTA LOCATION` is the native Databricks spelling.
+
+    It used to be regex-stripped down to a plain DuckDB table at no location that UC never
+    heard of — and reported success.
+    """
+    cat, schema = delta_catalog_and_schema
+    table_name = f"ddl_{uuid4().hex[:6]}"
+    storage_location = f"/data/delta/{cat.name}/{schema.name}/{table_name}"
+
+    warehouse = workspace_client.warehouses.create(name=f"ddl_wh_{uuid4().hex[:6]}")
+    result = workspace_client.statement_execution.execute_statement(
+        warehouse_id=warehouse.id,
+        statement=(
+            f"CREATE TABLE {cat.name}.{schema.name}.{table_name} "
+            f"(id BIGINT, nome STRING) USING DELTA LOCATION '{storage_location}'"
+        ),
+    )
+    assert result.status.state.value == "SUCCEEDED"
+
+    table = workspace_client.tables.get(full_name=f"{cat.name}.{schema.name}.{table_name}")
+    assert table.table_type.value == "EXTERNAL"
+    assert table.data_source_format.value == "DELTA"
+    assert table.storage_location == storage_location
+
+    # And it is immediately queryable by three-part name once the files exist.
+    write_deltalake(storage_location, pd.DataFrame({"id": [7], "nome": ["x"]}), mode="overwrite")
+    rows = workspace_client.statement_execution.execute_statement(
+        warehouse_id=warehouse.id,
+        statement=f"SELECT nome FROM {cat.name}.{schema.name}.{table_name}",
+    )
+    assert rows.result.data_array == [["x"]]
 
 
 @pytest.mark.workflow

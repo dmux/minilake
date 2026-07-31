@@ -24,17 +24,23 @@ from typing import Dict, List, Optional
 import docker
 from docker.errors import DockerException
 
-from minilake.config import settings
+from minilake.config import ensure_writable_dir, settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SPARK_IMAGE = "apache/spark-py:v3.4.0"
+DEFAULT_SPARK_IMAGE = "apache/spark:3.5.3-scala2.12-java17-python3-ubuntu"
 DEFAULT_TIMEOUT_SECONDS = 600
 
-# Must match the Spark version baked into DEFAULT_SPARK_IMAGE (delta-core 2.4.0
-# targets Spark 3.4.x). If MINILAKE_SPARK_IMAGE is overridden to a different
+# Must match the Spark version baked into DEFAULT_SPARK_IMAGE (delta-spark 3.2.1
+# targets Spark 3.5.x). If MINILAKE_SPARK_IMAGE is overridden to a different
 # Spark version, MINILAKE_DELTA_PACKAGE should be overridden to match.
-DEFAULT_DELTA_PACKAGE = "io.delta:delta-core_2.12:2.4.0"
+#
+# Deliberately held at the Scala 2.12 / Spark 3.5 line. Moving to Delta 4.x means
+# Spark 4 + Scala 2.13, and with it the `catalogManaged` table feature, whose commit
+# log lives partly in the catalog — DuckDB's delta_scan cannot read such a table at
+# all ("Catalog-managed table requires max_catalog_version to be set"). That would
+# break the write-with-Spark/read-with-SQL loop this project is built around.
+DEFAULT_DELTA_PACKAGE = os.environ.get("MINILAKE_DELTA_PACKAGE", "io.delta:delta-spark_2.12:3.2.1")
 
 
 def _executor_mode() -> str:
@@ -89,6 +95,38 @@ def _resolve_volume_mount() -> dict:
     return {host_path: {"bind": data_dir, "mode": "rw"}}
 
 
+def _resolve_network() -> Optional[str]:
+    """The Docker network to attach the spawned container to, if any.
+
+    A job task can need to reach minilake itself — Spark's Unity Catalog connector
+    resolves `catalog.schema.table` by calling minilake's API, so a script using
+    `spark.table()` fails with `java.net.ConnectException` from the default bridge, where
+    the server's hostname does not resolve.
+
+    Resolution mirrors `_resolve_volume_mount`: an explicit env var first, then
+    introspection of our own container. Outside Docker there is no network to join and
+    the spawned container keeps Docker's default.
+    """
+    explicit = os.environ.get("MINILAKE_DOCKER_NETWORK")
+    if explicit:
+        return explicit
+
+    container_id = os.environ.get("HOSTNAME")
+    if not container_id:
+        return None
+    try:
+        client = _get_client()
+        networks = client.containers.get(container_id).attrs["NetworkSettings"]["Networks"]
+        # A container on several networks gives no basis to choose; skip rather than
+        # guess wrong and produce a confusing partial-connectivity failure.
+        if len(networks) == 1:
+            return next(iter(networks))
+        logger.debug(f"Not attaching job container: own container is on {len(networks)} networks")
+    except (DockerException, KeyError) as e:
+        logger.warning(f"Could not introspect own container network: {e}")
+    return None
+
+
 def _run_container_sync(
     image: str,
     command: List[str],
@@ -105,6 +143,9 @@ def _run_container_sync(
             command=command,
             volumes=volumes,
             environment=env or None,
+            # Joins minilake's own network so a task can call back into the API — Spark's
+            # Unity Catalog connector needs that to resolve three-part table names.
+            network=_resolve_network(),
             # No working_dir override: the shared data volume is root-owned and the
             # Spark image runs as a non-root UID whose entrypoint needs a writable
             # cwd (e.g. to write java_opts.txt). Let the image use its own default
@@ -193,16 +234,34 @@ async def run_python_task(
 
     spark_image = image or os.environ.get("MINILAKE_SPARK_IMAGE", DEFAULT_SPARK_IMAGE)
     volumes = _resolve_volume_mount()
+    # The script may write to a path that does not exist yet — the documented
+    # PySpark flow saves a Delta table *before* create_table registers it — and
+    # the Spark container runs as uid 185, which cannot mkdir under a root-owned
+    # 0755 data_dir. Open up the root so sibling containers can create subtrees.
+    ensure_writable_dir(settings.data_dir)
     # spark-submit (not bare python3) so scripts get a real local Spark driver
     # environment, matching how Databricks actually runs notebook/python tasks.
     submit_flags: List[str] = []
     if packages:
-        ivy_cache = str(settings.data_dir / ".ivy2-cache")
+        ivy_cache = _prepare_ivy_cache()
         submit_flags = ["--packages", ",".join(packages), "--conf", f"spark.jars.ivy={ivy_cache}"]
     command = ["/opt/spark/bin/spark-submit", *submit_flags, script_path, *(args or [])]
 
     logger.info(f"Running job task in container: image={spark_image} command={command}")
     return await asyncio.to_thread(_run_container_sync, spark_image, command, volumes, timeout_seconds, env)
+
+
+def _prepare_ivy_cache() -> str:
+    """Create the Ivy home on the shared volume and return it.
+
+    Ivy writes its resolved-*.xml descriptors into `<ivy.home>/cache` but never
+    mkdirs it, so pointing spark.jars.ivy at a fresh directory makes the very
+    first --packages resolution die with FileNotFoundException.
+    """
+    ivy_home = settings.data_dir / ".ivy2-cache"
+    for path in (ivy_home / "cache", ivy_home / "jars"):
+        ensure_writable_dir(path)
+    return str(ivy_home)
 
 
 def prewarm_spark_image(image: Optional[str] = None) -> None:

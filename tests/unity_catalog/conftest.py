@@ -42,8 +42,9 @@ def catalog_and_schema(workspace_client: WorkspaceClient):
 @pytest.fixture
 def catalog_schema_and_table(workspace_client: WorkspaceClient):
     """Pre-created catalog, schema, and table, auto-cleaned up."""
-    from databricks.sdk.service.catalog import DataSourceFormat, TableType
-    from databricks.sdk.service.sql import ColumnInfo
+    # catalog.ColumnInfo, not sql.ColumnInfo — the latter is the statement-execution
+    # result column type, which only happens to overlap on the wire.
+    from databricks.sdk.service.catalog import ColumnInfo, DataSourceFormat, TableType
 
     cat_name = f"test_cat_{uuid4().hex[:6]}"
     schema_name = f"test_schema_{uuid4().hex[:6]}"

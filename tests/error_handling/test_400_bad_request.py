@@ -7,6 +7,28 @@ from databricks.sdk.service.sql import ColumnInfo
 
 
 @pytest.mark.error
+def test_malformed_body_uses_the_databricks_error_shape(workspace_client: WorkspaceClient):
+    """A request body that fails validation must carry an error_code.
+
+    FastAPI's default is a 422 with `{"detail": [...]}`, which the SDK cannot classify —
+    callers got an opaque failure instead of INVALID_PARAMETER_VALUE.
+    """
+    import requests
+
+    response = requests.post(
+        f"{workspace_client.config.host}/api/2.1/unity-catalog/tables",
+        json={"catalog_name": "some_catalog"},  # missing name and schema_name
+        timeout=30,
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error_code"] == "INVALID_PARAMETER_VALUE"
+    assert "name" in body["message"]
+    assert "detail" not in body
+
+
+@pytest.mark.error
 def test_catalog_create_missing_name_fails(workspace_client: WorkspaceClient):
     """Test: Create catalog without name parameter raises error."""
     with pytest.raises(TypeError):

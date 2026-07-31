@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 _UVICORN_LOG_LEVEL = "info" if settings.verbose else "warning"
 
+# Force uvicorn's pure-Python HTTP/1.1 parser instead of the default httptools.
+#
+# Java's HttpClient — which Spark's Unity Catalog connector uses — defaults to HTTP/2 and
+# opens every request with an `Upgrade: h2c` header. uvicorn speaks no HTTP/2 either way,
+# but httptools *drops the request body* when it sees that upgrade, so every POST arrives
+# empty and fails validation. h11 ignores the upgrade and reads the request normally.
+# Costs a little throughput; buys `spark.table()` working at all.
+_UVICORN_HTTP_PROTOCOL = "h11"
+
 
 def main() -> int:
     """Main CLI entrypoint."""
@@ -59,6 +68,12 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Fold the resolved CLI values back into settings so anything reading them later agrees
+    # with what we actually bind — the startup banner otherwise reported MINILAKE_PORT
+    # (default 8000) even when --port said something else.
+    settings.port = args.port
+    settings.bind_host = args.host
+
     logger.info(f"Starting minilake on {args.host}:{args.port}")
     logger.info(f"Data directory: {settings.data_dir}")
 
@@ -73,6 +88,7 @@ def main() -> int:
             factory=True,
             reload=args.reload,
             log_level=_UVICORN_LOG_LEVEL,
+            http=_UVICORN_HTTP_PROTOCOL,
             access_log=settings.verbose,
         )
         return 0
@@ -110,6 +126,7 @@ def _run_with_tls(args) -> int:
                 port=args.port,
                 lifespan="on",
                 log_level=_UVICORN_LOG_LEVEL,
+                http=_UVICORN_HTTP_PROTOCOL,
                 access_log=settings.verbose,
             )
         ),
@@ -122,6 +139,7 @@ def _run_with_tls(args) -> int:
                 ssl_keyfile=str(key_path),
                 lifespan="off",
                 log_level=_UVICORN_LOG_LEVEL,
+                http=_UVICORN_HTTP_PROTOCOL,
                 access_log=settings.verbose,
             )
         ),
@@ -178,6 +196,7 @@ def run_server(
             ssl_keyfile=ssl_keyfile,
             ssl_certfile=ssl_certfile,
             log_level=log_level,
+            http=_UVICORN_HTTP_PROTOCOL,
             access_log=settings.verbose,
         )
     except KeyboardInterrupt:

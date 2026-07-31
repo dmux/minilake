@@ -63,6 +63,23 @@ def test_subprocess_executor_passes_env_vars(monkeypatch, tmp_path: Path):
     print("✓ subprocess executor passes real env vars through")
 
 
+@pytest.mark.crud
+def test_prepare_ivy_cache_creates_resolution_dir(monkeypatch, tmp_path: Path):
+    """Ivy's `cache/` subdir must exist before spark-submit --packages runs.
+
+    Ivy writes resolved-*.xml into <ivy.home>/cache but never mkdirs it, so
+    without this the first --packages run dies with FileNotFoundException.
+    """
+    monkeypatch.setattr(docker_executor.settings, "data_dir", tmp_path)
+
+    ivy_home = Path(docker_executor._prepare_ivy_cache())
+
+    assert ivy_home == tmp_path / ".ivy2-cache"
+    assert (ivy_home / "cache").is_dir()
+    assert (ivy_home / "jars").is_dir()
+    print("✓ Ivy home is pre-created with its cache/ and jars/ subdirs")
+
+
 @pytest.mark.error
 def test_subprocess_executor_times_out_for_real(monkeypatch, tmp_path: Path):
     """A script that hangs is really killed at the timeout, not just claimed to be."""

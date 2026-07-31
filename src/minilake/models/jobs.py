@@ -107,6 +107,26 @@ class NewClusterSpec(BaseModel):
         extra = "allow"
 
 
+class MavenLibrary(BaseModel):
+    """A Maven coordinate, as in a Databricks task's `libraries[].maven`."""
+
+    coordinates: str
+    repo: Optional[str] = None
+    exclusions: Optional[List[str]] = None
+
+
+class Library(BaseModel):
+    """A task library. Only `maven` is honoured — its coordinates become
+    `spark-submit --packages`, which is what a script needs to use a format the base
+    Spark image doesn't ship (Delta being the common case). `pypi`/`jar`/`whl` are
+    accepted for request compatibility but ignored at run time."""
+
+    maven: Optional[MavenLibrary] = None
+
+    class Config:
+        extra = "allow"
+
+
 class Task(BaseModel):
     """A single task in a job. notebook_task/spark_python_task/sql_task(file)
     execute for real; other task types are accepted but SKIPPED at run time
@@ -116,6 +136,7 @@ class Task(BaseModel):
     notebook_task: Optional[NotebookTask] = None
     spark_python_task: Optional[SparkPythonTask] = None
     sql_task: Optional[SqlTask] = None
+    libraries: Optional[List[Library]] = None
     depends_on: Optional[List[TaskDependency]] = None
     run_if: Optional[RunIf] = RunIf.ALL_SUCCESS
     timeout_seconds: Optional[int] = None

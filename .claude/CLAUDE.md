@@ -243,6 +243,34 @@ top-level `mcp` package. They drive a real MCP `ClientSession` over Streamable H
 async-generator fixtures in a different task than it creates them in, which trips the MCP
 client's anyio task group.
 
+## The Unity Catalog protocol for Spark
+
+`spark.table("catalog.schema.table")` resolves against minilake, via Spark's
+`io.unitycatalog.spark.UCSingleCatalog` connector. Four things hold it up, and three of
+them fail in ways that point nowhere near the cause:
+
+- `table_id` on `TableInfo`, and `POST /temporary-{table,path}-credentials` returning an
+  empty credential set. A missing credentials endpoint surfaces as `DELTA_TABLE_NOT_FOUND`.
+- **uvicorn is pinned to `h11`** (`cli.py`). Java's `HttpClient` opens every request with
+  `Upgrade: h2c`; the default `httptools` parser drops the request body when it sees that,
+  so every POST arrives empty. Do not "simplify" this back to the default.
+- **Job containers join minilake's network** (`docker_executor._resolve_network`), or the
+  connector cannot reach the API — `java.net.ConnectException`.
+
+Pinned by `tests/unity_catalog/test_spark_catalog_protocol.py` (cheap, no JVM) and
+`tests/mcp_server/test_job_tools.py::test_spark_resolves_a_table_by_three_part_name`
+(a real Spark container).
+
+Only **EXTERNAL Delta** tables are visible to Spark, and that is deliberate. Unity
+Catalog's own managed tables use the `catalogManaged` Delta feature, whose commit log
+lives partly in the catalog — `delta_scan` refuses them outright. Keeping MANAGED tables
+on DuckDB is what preserves the fast SQL path. Do not "complete" this without discussion.
+
+The connector is also version-locked: `unitycatalog-spark_2.12` stops at **0.2.1**
+(Spark 3.5.3, Delta 3.2.1). Newer releases require Spark 4 + Scala 2.13, which brings
+`catalogManaged` and breaks DuckDB reads. Upgrading the Spark image means re-checking that
+`DESCRIBE DETAIL` still reports `minReaderVersion=1 / minWriterVersion=2`.
+
 ## Code Organization
 
 ### Services

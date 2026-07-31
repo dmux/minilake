@@ -4,8 +4,8 @@
 
 **minilake** is a local Databricks API emulator backed by DuckDB for real SQL execution. This document details all implemented features, APIs, and their current status.
 
-**Latest Update:** 2026-07-25
-**Version:** 0.1.0 (MVP)
+**Latest Update:** 2026-07-30
+**Version:** 1.5.0
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
 
 ---
@@ -260,7 +260,17 @@ after each item, run via
 - ✅ **Real Delta Lake Tables** (EXTERNAL): see below
 - ✅ Three-part naming: `catalog.schema.table`
 - ✅ Queryable immediately via SQL Statement Execution
-- ✅ Column definitions stored in UC metadata
+- ✅ Column definitions stored in UC metadata and returned by `GET`/`LIST`, with
+  `type_name`, `type_text`, `type_precision`/`type_scale` and `type_json` — the SDK's full
+  `ColumnInfo` contract
+- ✅ Databricks type names translated to DuckDB (`uc_types.py`): `STRING`, `LONG`, `BYTE`,
+  `TIMESTAMP_NTZ`, `DECIMAL(p,s)`, `ARRAY<T>`, `MAP<K,V>`, `STRUCT<a:T>`. Unsupported types
+  are rejected with `INVALID_REQUEST` listing the accepted ones, rather than surfacing a
+  raw DuckDB parser error
+- ✅ Reported column types come from the **physical** schema — `information_schema` for
+  MANAGED, the Delta log for EXTERNAL — so a declaration that disagrees with the files is
+  visible instead of silently believed
+- ✅ Duplicate create returns `409 ALREADY_EXISTS`; delete of a missing table returns `404`
 - ✅ Table existence checking
 
 **Response Format:**
@@ -273,8 +283,10 @@ after each item, run via
   "full_name": "my_catalog.my_schema.my_table",
   "table_type": "MANAGED",
   "columns": [
-    {"name": "id", "type_text": "INTEGER", "nullable": true},
-    {"name": "name", "type_text": "VARCHAR", "nullable": true}
+    {"name": "id", "type_text": "int", "type_name": "INT", "position": 0,
+     "nullable": true, "type_json": "{\"name\":\"id\",\"type\":\"integer\",...}"},
+    {"name": "name", "type_text": "string", "type_name": "STRING", "position": 1,
+     "nullable": true, "type_json": "{\"name\":\"name\",\"type\":\"string\",...}"}
   ],
   "owner": "minilake-user",
   "created_at": 1784942454001,
@@ -318,12 +330,20 @@ after each item, run via
 }
 ```
 
-**Verified end-to-end** (see `tests/unity_catalog/test_delta_tables.py` and the manual validation during development): a real `apache/spark-py` container writing via `spark-submit`, and the lightweight `deltalake` package, both produce Delta tables that minilake's SQL API reads correctly — including immediately reflecting overwrites (no caching).
+**Verified end-to-end** (see `tests/unity_catalog/test_delta_tables.py` and the manual validation during development): a real `apache/spark` container writing via `spark-submit`, and the lightweight `deltalake` package, both produce Delta tables that minilake's SQL API reads correctly — including immediately reflecting overwrites (no caching).
 
 **Limitations:**
 
 - ⚠️ **Read-only from minilake's SQL engine**: DuckDB's `delta` extension doesn't support writes; `INSERT`/`UPDATE` against an EXTERNAL Delta table fails (write via Spark/notebook instead)
-- ⚠️ **No Unity Catalog REST-based Spark catalog resolution**: Spark reads/writes by `storage_location` path, not by calling minilake's `/api/2.1/unity-catalog/*` endpoints to resolve `catalog.schema.table` → path (that would require implementing the real Unity Catalog REST protocol Spark's catalog plugin speaks — a much larger, separate initiative)
+- ✅ **Unity Catalog REST-based Spark catalog resolution**: `spark.table("cat.sch.tbl")` resolves against minilake. Spark's `io.unitycatalog.spark.UCSingleCatalog` connector calls minilake's `/api/2.1/unity-catalog/*` endpoints to resolve the three-part name to a `storage_location`, then reads the Delta files directly. Verified end-to-end in `tests/mcp_server/test_job_tools.py::test_spark_resolves_a_table_by_three_part_name` (a real Spark container doing `INSERT` and `spark.table()` by name), with the wire contract pinned in `tests/unity_catalog/test_spark_catalog_protocol.py`.
+
+  What it took, in case it ever breaks:
+  - `table_id` on `TableInfo` — the connector reads it from the table and sends it back when requesting access
+  - `POST /temporary-table-credentials` and `POST /temporary-path-credentials` — called before *every* read, write and create. Both return an empty credential set, the same answer the reference Unity Catalog server gives for a filesystem location. Missing, they surface three layers away as `DELTA_TABLE_NOT_FOUND`
+  - uvicorn pinned to the `h11` HTTP parser (`cli.py`) — Java's `HttpClient` opens every request with `Upgrade: h2c`, and the default `httptools` parser drops the request body when it sees that, so every POST arrived empty
+  - job containers join minilake's Docker network (`docker_executor._resolve_network`), or the connector cannot reach the API at all
+
+- ⚠️ **Only EXTERNAL Delta tables are visible to Spark**: a MANAGED table is a DuckDB table with no files, so it has nothing for Spark to read. This is not a gap to close — the alternative, Unity Catalog's own managed tables, use the `catalogManaged` Delta feature whose commit log lives partly in the catalog, and DuckDB's `delta_scan` cannot read those at all (`Catalog-managed table requires max_catalog_version to be set`). Keeping MANAGED on DuckDB is what preserves the fast SQL path.
 - ⚠️ First `delta_scan()` requires network access once, to `INSTALL` DuckDB's `delta` extension (fails loudly, not silently, if unavailable)
 
 **Status:** ✅ Complete and tested
@@ -338,6 +358,7 @@ after each item, run via
 - `POST /api/2.1/unity-catalog/volumes` — Create volume
 - `GET /api/2.1/unity-catalog/volumes` — List volumes (filtered by catalog.schema)
 - `GET /api/2.1/unity-catalog/volumes/{name}` — Get volume details
+- `PATCH /api/2.1/unity-catalog/volumes/{full_name}` — Update volume metadata
 - `DELETE /api/2.1/unity-catalog/volumes/{name}` — Delete volume
 
 **Key Features:**
@@ -407,7 +428,7 @@ after each item, run via
 - `POST /api/2.2/jobs/runs/cancel` / `delete` — Cancel / delete run history
 - `GET /api/2.2/jobs/runs/get-output` — Real captured stdout/stderr
 
-**How real execution works (the point of this feature):** minilake mounts the host's Docker socket (`/var/run/docker.sock`) and, on `run-now`, spawns a **sibling container** from a real Spark image (`apache/spark-py`, configurable via `MINILAKE_SPARK_IMAGE`) to run the task with `spark-submit` — the same architecture LocalStack uses to execute Lambda functions in real Docker containers rather than faking them in-process. The spawned container shares the same data volume as minilake (via `MINILAKE_DOCKER_VOLUME` or introspection of the running container's own mounts), so it can see workspace files written via the Workspace API. If no Docker socket is available, `MINILAKE_JOB_EXECUTOR=subprocess` falls back to running the task script as a plain local subprocess instead.
+**How real execution works (the point of this feature):** minilake mounts the host's Docker socket (`/var/run/docker.sock`) and, on `run-now`, spawns a **sibling container** from a real Spark image (`apache/spark`, configurable via `MINILAKE_SPARK_IMAGE`) to run the task with `spark-submit` — the same architecture LocalStack uses to execute Lambda functions in real Docker containers rather than faking them in-process. The spawned container shares the same data volume as minilake (via `MINILAKE_DOCKER_VOLUME` or introspection of the running container's own mounts), so it can see workspace files written via the Workspace API, and joins minilake's own Docker network (`MINILAKE_DOCKER_NETWORK` or introspection) so the task can call back into the API — which is what lets Spark resolve `catalog.schema.table` through Unity Catalog. If no Docker socket is available, `MINILAKE_JOB_EXECUTOR=subprocess` falls back to running the task script as a plain local subprocess instead.
 
 **Supported task types (execute for real):**
 
@@ -596,6 +617,72 @@ docker compose --profile notebook up -d
 
 ---
 
+### 18. **MCP Server — LLM agent interface** ✅ (optional)
+
+**Modules:** `minilake/mcp/` (`server.py`, `client.py`, `introspect.py`, `resources.py`,
+`prompts.py`, `tools/` — one module per service group)
+**Endpoint:** `POST|GET /mcp` (Streamable HTTP), served on the same port as the REST API
+**Enabled by:** `MINILAKE_MCP=1` plus the optional extra (`pip install 'minilake[mcp]'`;
+already baked into the Docker image)
+
+**Architecture:**
+
+- The MCP server is a Starlette sub-app mounted at `/` **last**, keeping the SDK's default
+  `streamable_http_path` so `POST /mcp` is an exact route with no redirect. Mounting at
+  `/mcp` with `streamable_http_path="/"` instead yields a 307 on the bare path, which not
+  every MCP client follows on a POST. A root mount matches every path, hence "last" —
+  routes registered before it (all `/api/*`, the 501 catch-all, `/_minilake`,
+  `/openapi.json`) still win.
+- The session manager is entered from `app.py`'s own `lifespan` via `AsyncExitStack`: a
+  mounted sub-app's lifespan never runs, so without this the first request fails with
+  `RuntimeError: Task group is not initialized`.
+- Tools reach minilake through `httpx.ASGITransport` against the live app — no socket, and
+  every call passes through `errors.install_exception_handlers`, so tools see the same
+  `{error_code, message}` bodies a `databricks-sdk` client would. Non-2xx becomes a
+  `ToolError`, which reaches the model as a readable `isError` result it can retry from.
+- Tool modules register per **enabled** service, mirroring `get_enabled_routers()`, so
+  `MINILAKE_SERVICES` filtering never leaves tools pointing at 404s.
+- DNS-rebinding protection is always configured explicitly. FastMCP auto-arms it with a
+  loopback-only allowlist when its `host` is localhost (the default), which would reject
+  the Docker test stack's `minilake-test-server:8000` Host with `421` before any tool ran.
+
+**Surface:** ~70 tools across SQL, warehouses, Unity Catalog, Jobs, Workspace, Files, DBFS,
+secrets, clusters and admin, plus 4 composites (`describe_catalog_tree`, `seed_table`,
+`setup_fixture`, `run_python_script`), 7 resources and 4 prompts.
+
+**Notable behaviours:**
+
+- ✅ `run_python_script` executes real PySpark: stages the script, creates a one-off job with
+  a `spark_python_task`, polls `runs/get` with backoff, returns real stdout/stderr. Fails
+  fast with an actionable message under `MINILAKE_JOB_EXECUTOR=subprocess`, where the
+  minilake image has no pyspark.
+- ✅ `describe_table` / `describe_catalog_tree` report column names and types. Both now
+  agree with `GET /tables/{full_name}`, which returns the same `columns` list a real
+  Databricks workspace does.
+- ✅ `seed_table` clears existing rows so the table contains exactly what was passed, and
+  surfaces a rejected column type directly instead of letting it resurface as an unrelated
+  "table does not exist" from the following statement.
+- ✅ `run_sql` appends a DuckDB-vs-Spark-SQL hint to parser/binder errors, and caps rows
+  (`MINILAKE_MCP_MAX_ROWS`, default 200) with an explicit truncation note.
+- ✅ `run_python_script` caps returned job logs (`MINILAKE_MCP_MAX_LOG_CHARS`, default
+  8000) and sets `logs_truncated`. `spark-submit` emits Ivy resolution plus every Spark
+  INFO line — a 15-line PySpark script routinely produced >150k characters, enough to
+  exhaust an agent's context on its own. Truncation anchors on the Python traceback when
+  there is one; the full logs stay available through `get_run_output`.
+- ⚠️ **Off by default.** The tools run SQL and spawn Docker containers, and minilake accepts
+  any token — enabling this on a published port is close to shell access.
+- ⚠️ **Completions not implemented.** On the `mcp` 1.x line `completion/complete` requires
+  the low-level `Server` API rather than a FastMCP decorator; the cost isn't proportional to
+  the value here.
+- ⚠️ Pinned to `mcp>=1.29,<2`. Version 2.0 renames `FastMCP` to `MCPServer`, removes
+  `mcp.server.fastmcp`, and switches from `httpx` to `httpx2` — a rewrite, not a bump. SDK
+  names are confined to `server.py` and `client.py` to keep that migration small.
+
+**Status:** ✅ Complete and tested — `tests/mcp_server/` (real MCP SDK client over Streamable
+HTTP, mirroring the project's "official client is the source of truth" rule)
+
+---
+
 ## Not Implemented (501 Responses)
 
 These APIs are out of scope for MVP and return clear 501 "Not Implemented" errors via the catch-all handler.
@@ -678,12 +765,24 @@ Running job containers and open SQL statement cursors are not resumable across a
 | `MINILAKE_PERSIST` | unset | Set to `1`/`true` to save a JSON state snapshot on shutdown and restore it on startup |
 | `MINILAKE_SNAPSHOT_PATH` | `<data_dir>/snapshot.json` | Path to the state snapshot file. Resolved under `MINILAKE_DATA_DIR` by default so it always lands on the same persistent volume; only needs setting explicitly to put it somewhere else |
 | `MINILAKE_SERVICES` | (empty) | Comma-separated service allowlist (empty = all enabled) |
-| `MINILAKE_SPARK_IMAGE` | `apache/spark-py:v3.4.0` | Image used to execute Jobs' `notebook_task`/`spark_python_task` in a sibling container |
+| `MINILAKE_SPARK_IMAGE` | `apache/spark:3.5.3-scala2.12-java17-python3-ubuntu` | Image used to execute Jobs' `notebook_task`/`spark_python_task` in a sibling container |
 | `MINILAKE_JOB_EXECUTOR` | `docker` | Set to `subprocess` to run job task scripts as a plain local subprocess instead of a sibling Docker container (no Docker socket needed) |
 | `MINILAKE_DOCKER_VOLUME` | unset | Named volume backing `MINILAKE_DATA_DIR`, shared with spawned job containers (falls back to introspecting the running container's own mounts, then to a host bind-mount, if unset) |
+| `MINILAKE_DOCKER_NETWORK` | unset | Docker network to attach spawned job containers to, so a task can call back into minilake's API (needed for `spark.table()`). Falls back to introspecting minilake's own network when it is on exactly one |
+| `MINILAKE_MCP_MAX_LOG_CHARS` | `8000` | Cap on job logs returned by the `run_python_script` MCP tool; Spark's own logging is filtered out first |
 | `MINILAKE_CLUSTER_START_DELAY` | `1.0` | Seconds a cluster spends in `PENDING`/`RESTARTING`/`RESIZING` before reaching `RUNNING` |
 | `MINILAKE_CLUSTER_TERMINATE_DELAY` | `0.5` | Seconds a cluster spends in `TERMINATING` before reaching `TERMINATED` |
 | `MINILAKE_DUCKDB_MEMORY_LIMIT` | `4GB` | DuckDB memory limit |
+| `MINILAKE_VERBOSE` | unset | Set to `1` for full INFO logs (default is quiet: banner + warnings/errors only) |
+| `MINILAKE_BIND_HOST` / `MINILAKE_HOST` | `127.0.0.1` | Bind address (Docker sets `0.0.0.0`) |
+| `MINILAKE_TLS` | unset | Set to `1` to also serve native HTTPS on `MINILAKE_HTTPS_PORT` |
+| `MINILAKE_HTTPS_PORT` | `8443` | HTTPS port when `MINILAKE_TLS=1` |
+| `MINILAKE_SSL_CERTFILE` / `MINILAKE_SSL_KEYFILE` | unset | Bring-your-own TLS cert; a self-signed one is generated under `<data_dir>/certs` if unset |
+| `MINILAKE_TLS_SAN` | `localhost,127.0.0.1,0.0.0.0` | SANs baked into the auto-generated cert |
+| `MINILAKE_MCP` | unset | Set to `1` to serve the MCP endpoint (see section 18) |
+| `MINILAKE_MCP_PATH` | `/mcp` | MCP endpoint path |
+| `MINILAKE_MCP_ALLOWED_HOSTS` | (empty) | Host-header allowlist for the MCP endpoint; empty disables DNS-rebinding protection |
+| `MINILAKE_MCP_MAX_ROWS` | `200` | Default row cap for the `run_sql` tool |
 
 ---
 
