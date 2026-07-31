@@ -16,12 +16,57 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
+  <a href="docs/index.md"><strong>Documentation</strong></a> · <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
 </p>
 
 ---
 
-**MiniLake** is a free, local Databricks API emulator — a single-developer tool for testing `databricks-sdk`/Terraform code against real SQL, real Delta Lake, and real Job execution, without paying for cloud compute.
+**MiniLake** is a free, local Databricks API emulator — a single-developer tool for testing
+`databricks-sdk`/Terraform code against real SQL, real Delta Lake, and real Job execution,
+without paying for cloud compute.
+
+## Quick Start
+
+```bash
+# Option 1: PyPI
+pip install minilake
+minilake --port 8000
+
+# Option 2: GitHub Container Registry
+docker run -p 8000:8000 ghcr.io/dmux/minilake:latest
+
+# Option 3: Clone and build
+git clone https://github.com/dmux/minilake && cd minilake
+docker compose up -d
+
+# Verify (any option)
+curl http://localhost:8000/_minilake/health
+```
+
+No account, no API key, no sign-up. Then point any Databricks client at it:
+
+```python
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient(host="http://localhost:8000", token="dev")
+w.catalogs.create(name="vendas")
+```
+
+More in [Getting Started](docs/getting-started.md).
+
+## Documentation
+
+| | |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Install, first catalog and query, internal endpoints |
+| [Configuration](docs/configuration.md) | Every environment variable, persistence, HTTPS/TLS |
+| [Databricks SDK](docs/databricks-sdk.md) | Unity Catalog, warehouses, SQL and jobs from Python |
+| [Terraform & Asset Bundles](docs/terraform.md) | The provider, and `bundle deploy` / `bundle run` |
+| [Spark & Delta Lake](docs/spark-and-delta.md) | Real Delta files, real Spark jobs, `spark.table()` by name |
+| **[MCP Server](docs/mcp/index.md)** | **67 tools for LLM agents — [examples](docs/mcp/examples.md), [tool reference](docs/mcp/tools.md), [troubleshooting](docs/mcp/troubleshooting.md)** |
+| [Testing & development](docs/testing.md) | Running the suite, adding an API group |
+| [Releases & CI/CD](docs/releases.md) | How a tag becomes a published image |
+| [Feature status](FEATURES.md) | Endpoint-by-endpoint status and design rationale |
 
 ## Supported Services
 
@@ -32,286 +77,39 @@
 | **SQL Statement Execution** | ✅ Real | Real DuckDB; `JSON_ARRAY`/`ARROW_STREAM`/`CSV`, `INLINE`/`EXTERNAL_LINKS` |
 | **SQL Warehouses** | ✅ Real | Full CRUD + lifecycle |
 | **Jobs** | ✅ Real | Sibling Docker container execution (Spark) or subprocess fallback; real DAG scheduling (`depends_on`/`run_if`); `sql_task.file` |
-| **Workspace** | ✅ Real | File-backed notebook/script storage; raw-bytes `workspace-files` file sync powers `databricks bundle deploy` / `bundle run` (incl. Job resources) |
+| **Workspace** | ✅ Real | File-backed notebook/script storage; raw-bytes `workspace-files` sync powers `databricks bundle deploy` / `bundle run` |
 | **DBFS & Files API** | ✅ Real | File-backed storage, chunked upload |
 | **Secrets** | ✅ Real | Real CRUD; values only resolvable inside job env vars, never via direct API (matches real Databricks) |
 | **Clusters** | ✅ Real state machine | CRUD + timed lifecycle transitions; **no real Spark compute** (by design) |
 | **Permissions** | ✅ Real CRUD | Single-user "allow-all" default (by design — see Gaps) |
 | **Identity (SCIM)** | ✅ Static | Fake current-user endpoint |
 | **Persistence** (`MINILAKE_PERSIST=1`) | ✅ Real | JSON snapshot on shutdown, restored on startup |
+| **Unity Catalog protocol for Spark** | ✅ Real | `spark.table("cat.sch.tbl")` resolves against minilake — see [Spark & Delta Lake](docs/spark-and-delta.md#reading-by-name-with-unity-catalog) |
 | **JupyterLab + PySpark + Delta** (optional) | ✅ Real | `docker compose --profile notebook up` |
+| **MCP Server** (optional, `MINILAKE_MCP=1`) | ✅ Real | 67 tools + resources + prompts at `/mcp` — see [MCP Server](docs/mcp/index.md) |
 | Secrets ACLs, Repos/Git, multi-language notebooks, DBT/pipeline tasks, Model Registry, Vector Search, Dashboards | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED` |
 
 ## Known Gaps
 
-These are **deliberate**, not oversights — minilake targets one developer running it locally, not a shared/multi-tenant server:
+These are **deliberate**, not oversights — minilake targets one developer running it
+locally, not a shared or multi-tenant server:
 
 - **No real authentication** — any token is accepted; there's only ever one real user.
-- **No access-control enforcement** — Permissions API is real CRUD but always allow-all.
-- **No real Spark compute for Clusters** — state machine only; real compute happens via Jobs' sibling containers instead.
-- **Single process, no HA** — and DuckDB's single-writer model means concurrent load from multiple simulated "users" will contend on locks.
-- **Uneven test coverage** — ~45% overall; `jobs.py`, `sql_statements.py`, `unity_catalog.py` are covered mostly on happy paths, not edge cases.
+- **No access-control enforcement** — the Permissions API is real CRUD but always allow-all,
+  so a test that passes here says nothing about grants in a real workspace.
+- **No real Spark compute for Clusters** — state machine only; real compute happens through
+  Jobs' sibling containers instead.
+- **Single process, no HA** — and DuckDB's single-writer model means concurrent load
+  contends on locks.
+- **Uneven test coverage** — `jobs.py`, `sql_statements.py` and `unity_catalog.py` are
+  covered mostly on happy paths, not edge cases.
 - **Secrets ACLs not implemented** — scope/secret CRUD is real, ACL endpoints aren't.
-
----
-
-## Quick Start
-
-```bash
-# Option 1: PyPI (simplest)
-pip install minilake
-minilake --port 8000
-# Runs on http://localhost:8000
-
-# Option 2: GitHub Container Registry
-docker run -p 8000:8000 ghcr.io/dmux/minilake:latest
-
-# Option 3: Clone and build
-git clone https://github.com/dmux/minilake
-cd minilake
-docker compose up -d
-
-# Verify (any option)
-curl http://localhost:8000/_minilake/health
-```
-
-That's it. No account, no API key, no sign-up.
-
----
-
-## Internal API
-
-Minilake exposes internal endpoints for test automation:
-
-```bash
-# Health check — returns service status
-curl http://localhost:8000/_minilake/health
-
-# Readiness check — ensures DuckDB pool and data dir are ready
-curl http://localhost:8000/_minilake/ready
-
-# Reset all state — wipe every service back to empty (useful between test runs)
-curl -X POST http://localhost:8000/_minilake/reset
-
-# List enabled services
-curl http://localhost:8000/_minilake/services
-```
-
-The reset endpoint is especially useful in CI pipelines and test suites — call it in `setUp`/`beforeEach` to get a clean environment for every test without restarting the container. Note that physical tables and volumes are preserved.
-
-To set up configuration, use environment variables at startup:
-
-```bash
-docker run -p 8000:8000 \
-  -e MINILAKE_SERVICES=unity_catalog,sql_statements,sql_warehouses \
-  ghcr.io/dmux/minilake:latest
-```
-
-### Verbose Logging
-
-By default, minilake only prints its startup banner (ASCII logo + port + enabled services) and stays quiet otherwise — no per-service load logs, no per-request access logs, no SQL/job execution traces. Set `MINILAKE_VERBOSE=1` to get full `INFO`-level logs instead:
-
-```bash
-docker run -p 8000:8000 \
-  -e MINILAKE_VERBOSE=1 \
-  ghcr.io/dmux/minilake:latest
-```
-
-### Surviving a Restart
-
-By default, all state (catalogs, jobs, secrets, clusters, ...) lives in memory and is lost when the container stops — real files (Workspace, DBFS, EXTERNAL Delta data) always survive, but metadata doesn't. Set `MINILAKE_PERSIST=1` to save a JSON snapshot on shutdown and restore it on the next startup, as long as `MINILAKE_DATA_DIR` points at a volume that survives the restart too:
-
-```bash
-docker run -p 8000:8000 \
-  -e MINILAKE_PERSIST=1 \
-  -v minilake_data:/data \
-  ghcr.io/dmux/minilake:latest
-```
-
-### Real Job Execution (Docker-out-of-Docker)
-
-By default, `notebook_task`/`spark_python_task` Jobs run for real in a **sibling** Docker container (Apache Spark image), the same pattern LocalStack uses for Lambda. This needs the host's Docker socket mounted:
-
-```bash
-docker run -p 8000:8000 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/dmux/minilake:latest
-```
-
-If a Docker socket isn't available (e.g. restricted CI runners), set `MINILAKE_JOB_EXECUTOR=subprocess` to fall back to running task scripts as a plain local subprocess instead — no Docker required, at the cost of not matching the real Spark runtime exactly.
-
-### Native HTTPS / TLS (no proxy)
-
-The Databricks CLI expects an `https://` host. Instead of putting a TLS proxy
-(caddy/nginx) in front, minilake can serve HTTPS itself. Set `MINILAKE_TLS=1` and
-it serves TLS on `:8443` **in addition to** plain HTTP on `:8000`:
-
-```bash
-docker run -p 8000:8000 -p 8443:8443 \
-  -e MINILAKE_TLS=1 \
-  -v minilake_data:/data \
-  ghcr.io/dmux/minilake:latest
-```
-
-Two certificate modes:
-
-| Mode | How | Trusting it on the client |
-|---|---|---|
-| **Auto self-signed** (default when TLS on) | generated once under `<data_dir>/certs/minilake.crt` | **macOS:** import into the keychain (`security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db <cert>`). **Linux:** `export SSL_CERT_FILE=<data_dir>/certs/minilake.crt` |
-| **Bring-your-own** | `MINILAKE_SSL_CERTFILE` + `MINILAKE_SSL_KEYFILE` (e.g. a cert from an internal CA your machine already trusts) | nothing extra — the CA is already trusted |
-
-`MINILAKE_TLS_SAN` (default `localhost,127.0.0.1,0.0.0.0`) controls the SANs baked
-into the auto-generated cert; it's kept under 398 days so macOS accepts it and is
-regenerated automatically as it nears expiry.
-
-> **macOS note:** the Databricks CLI (Go) ignores `SSL_CERT_FILE` on macOS — it
-> only trusts the system keychain there. So on macOS use the keychain import or
-> the bring-your-own path; `SSL_CERT_FILE` is the Linux/CI route.
-
-Point your profile at the HTTPS endpoint:
-
-```ini
-[DEFAULT]
-host  = https://localhost:8443
-token = dev
-```
-
----
-
-## Using with Databricks SDK (Python)
-
-```python
-from databricks.sdk import WorkspaceClient
-
-# All clients use the same endpoint and any dummy token
-w = WorkspaceClient(
-    host="http://localhost:8000",
-    token="dev"
-)
-
-# Unity Catalog — Catalogs and Schemas
-w.catalogs.create(name="my_catalog")
-w.schemas.create(name="my_schema", catalog_name="my_catalog")
-
-# Unity Catalog — Native Table Creation
-# Create tables that are instantly queryable
-w.tables.create(
-    full_name="my_catalog.my_schema.my_table",
-    columns=[
-        {"name": "id", "type_text": "INTEGER"},
-        {"name": "name", "type_text": "VARCHAR"}
-    ],
-    table_type="MANAGED"
-)
-
-# SQL Warehouses
-warehouse = w.warehouses.create(
-    name="test_warehouse",
-    cluster_size="Small"
-)
-w.warehouses.start(warehouse.id)
-```
-
----
-
-## Using with Terraform
-
-**Terraform** — point your provider block to the local instance:
-
-```hcl
-provider "databricks" {
-  host  = "http://localhost:8000"
-  token = "dev"
-}
-
-resource "databricks_catalog" "sandbox" {
-  name    = "sandbox"
-  comment = "Local sandbox catalog"
-}
-
-resource "databricks_schema" "things" {
-  catalog_name = databricks_catalog.sandbox.name
-  name         = "things"
-}
-
-resource "databricks_sql_endpoint" "compute" {
-  name             = "local-compute"
-  cluster_size     = "Small"
-}
-```
-
-### Databricks Asset Bundles (`databricks bundle deploy` / `bundle run`)
-
-Asset Bundles work against minilake end-to-end. The CLI uses the Workspace
-file-sync endpoints (`workspace-files/import-file` + read) to upload the bundle's
-`files/` and store its Terraform state, and the Terraform provider creates
-`resources` through minilake's real REST APIs. Point your `databricks.yml` target at
-the local host:
-
-```yaml
-targets:
-  dev:
-    mode: development
-    workspace:
-      host: http://localhost:8000
-```
-
-```bash
-databricks bundle deploy -t dev
-databricks bundle run my_job -t dev   # Job resources run for real (real Spark)
-```
-
-**Job** resources deploy and execute for real (a `spark_python_task` runs on real
-Spark in a sibling container). Other resource types (pipelines/DLT, serving, ...)
-depend on APIs minilake doesn't emulate and aren't supported yet. A complete,
-runnable demo bundle lives in the sibling [`databricks/`](../databricks) project.
-
----
-
-## Optional: Real PySpark + Delta Lake in JupyterLab
-
-For interactive exploration, an optional JupyterLab profile shares minilake's data volume and comes preconfigured with Delta Lake:
-
-```bash
-docker compose --profile notebook up -d
-# open http://localhost:8888 — a quickstart notebook is pre-loaded
-```
-
-It demonstrates registering an EXTERNAL Delta table in minilake, writing to it with real PySpark (`df.write.format("delta")`), and reading the same data back through minilake's SQL Statement Execution API — proving DataFrame writes and SQL reads see the same real data.
-
----
-
-## Testing & Development
-
-```bash
-# Run all tests locally
-pytest tests/ -v
-
-# Run tests in Docker
-bash scripts/run-tests-docker.sh
-
-# Run tests with coverage
-pytest tests/ --cov=minilake --cov-report=html
-```
-
----
-
-## Releases & CI/CD
-
-- **Every push/PR to `main`** runs [`ci.yml`](.github/workflows/ci.yml): lint (`ruff`) + the full test suite in Docker.
-- **Tagging a release** builds and publishes automatically — no manual Docker build/push needed:
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-This triggers [`release.yml`](.github/workflows/release.yml), which re-runs the test suite as a gate, then builds a multi-arch (`amd64`/`arm64`) image and publishes it to **GitHub Container Registry** as `ghcr.io/dmux/minilake:X.Y.Z`, `ghcr.io/dmux/minilake:X.Y`, and `ghcr.io/dmux/minilake:latest`, and creates a [GitHub Release](https://github.com/dmux/minilake/releases) with auto-generated notes. Tags must match `vX.Y.Z` (semver).
-
-The badges at the top of this README (release version, CI status, release status) are live [shields.io](https://shields.io) badges that query the GitHub API directly — they always reflect the latest tag/workflow run with no manual README edit required after a release.
-
----
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the project structure, how to add a new API group, and the PR checklist.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the project structure, how to add a new API
+group, and the PR checklist.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
