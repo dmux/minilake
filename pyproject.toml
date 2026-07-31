@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minilake"
-version = "1.3.0"
+version = "1.5.0"
 description = "A local Databricks API emulator backed by DuckDB."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,7 +12,20 @@ license = { text = "MIT" }
 authors = [
     { name = "Rafael Sales", email = "rafael.sales@gmail.com" }
 ]
-urls = { Repository = "https://github.com/dmux/minilake", Issues = "https://github.com/dmux/minilake/issues" }
+keywords = ["databricks", "emulator", "duckdb", "delta-lake", "unity-catalog", "spark", "mcp", "testing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Testing :: Mocking",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "fastapi>=0.115",
@@ -29,6 +42,15 @@ dependencies = [
     "pyarrow>=14.0",
     "cryptography>=42.0",
 ]
+
+# Keep this below `dependencies`: a `[table]` header ends the parent table, so anything
+# declared after it would be parsed as a URL rather than a project field.
+[project.urls]
+Homepage = "https://github.com/dmux/minilake"
+Documentation = "https://github.com/dmux/minilake/blob/main/docs/index.md"
+Repository = "https://github.com/dmux/minilake"
+Issues = "https://github.com/dmux/minilake/issues"
+Changelog = "https://github.com/dmux/minilake/releases"
 
 [project.optional-dependencies]
 # MCP server (exposes minilake's capabilities to LLM agents at /mcp). Optional so the
@@ -60,6 +82,18 @@ minilake = "minilake.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/minilake"]
+
+[tool.hatch.build.targets.sdist]
+# The sdist is what someone builds from, so it carries the source, the docs and the
+# compose files. Agent config and local tooling are not part of that.
+exclude = [
+    "/.claude",
+    "/.mcp.json",
+    "/.github",
+    "/htmlcov",
+    "/data",
+    "/scratchpad",
+]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

@@ -1,8 +1,8 @@
 name: Release
 
 # Tag a commit `vX.Y.Z` and push the tag -- this builds a multi-arch image,
-# publishes it to GitHub Container Registry (ghcr.io/dmux/minilake), and
-# creates a GitHub Release, all automatically.
+# publishes it to GitHub Container Registry (ghcr.io/dmux/minilake) and to PyPI,
+# and creates a GitHub Release, all automatically.
 on:
   push:
     tags:
@@ -21,6 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Cheapest possible gate, and it runs before anything is published: a tag that
+      # disagrees with pyproject.toml would ship an image labelled one version and a
+      # wheel containing another, and PyPI uploads cannot be replaced.
+      - name: Check the tag matches the packaged version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag is v${tag_version} but pyproject.toml says ${pkg_version}."
+            echo "Bump the version, run 'uv lock', commit, then re-tag."
+            exit 1
+          fi
+          echo "Version ${pkg_version} confirmed."
 
       - name: Run test suite in Docker
         run: docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test-runner
@@ -74,8 +88,34 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  pypi-publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # Trusted Publishing: PyPI verifies this workflow's identity through GitHub's OIDC
+    # provider, so there is no API token to store, leak or rotate. The environment name
+    # is part of what PyPI checks — it must match the publisher configured there.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/minilake
+    permissions:
+      id-token: write # required for OIDC; nothing else is needed here
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Check package metadata
+        run: uvx twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
   github-release:
-    needs: build-and-publish
+    needs: [build-and-publish, pypi-publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,8 +127,10 @@ jobs:
         with:
           generate_release_notes: true
           body: |
-            Docker image: `ghcr.io/${{ github.repository }}:${{ needs.build-and-publish.outputs.version }}`
-
             ```bash
+            pip install minilake==${{ needs.build-and-publish.outputs.version }}
             docker pull ghcr.io/${{ github.repository }}:${{ needs.build-and-publish.outputs.version }}
             ```
+
+            - PyPI: https://pypi.org/project/minilake/${{ needs.build-and-publish.outputs.version }}/
+            - Container image: `ghcr.io/${{ github.repository }}:${{ needs.build-and-publish.outputs.version }}`
