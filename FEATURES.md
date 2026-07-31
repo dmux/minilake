@@ -5,7 +5,7 @@
 **minilake** is a local Databricks API emulator backed by DuckDB for real SQL execution. This document details all implemented features, APIs, and their current status.
 
 **Latest Update:** 2026-07-30
-**Version:** 1.5.0
+**Version:** 1.5.1
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
 
 ---

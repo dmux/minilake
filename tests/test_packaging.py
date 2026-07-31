@@ -34,10 +34,7 @@ def test_readme_has_no_relative_links():
     """
     relative = [t for t in _readme_targets() if not t.startswith(_ABSOLUTE)]
 
-    assert not relative, (
-        "README.md must use absolute URLs so it renders on PyPI. Relative targets found: "
-        f"{relative}"
-    )
+    assert not relative, f"README.md must use absolute URLs so it renders on PyPI. Relative targets found: {relative}"
 
 
 @pytest.mark.skipif(not README.exists(), reason="running outside a source checkout")
