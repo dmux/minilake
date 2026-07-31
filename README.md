@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="minilake_logo.png" alt="minilake — Local Databricks API Emulator" width="400"/>
+  <img src="https://raw.githubusercontent.com/dmux/minilake/main/minilake_logo.png" alt="minilake — Local Databricks API Emulator" width="400"/>
 </p>
 
 <h1 align="center">MiniLake</h1>
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/index.md"><strong>Documentation</strong></a> · <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
+  <a href="https://github.com/dmux/minilake/blob/main/docs/index.md"><strong>Documentation</strong></a> · <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
 </p>
 
 ---
@@ -52,21 +52,21 @@ w = WorkspaceClient(host="http://localhost:8000", token="dev")
 w.catalogs.create(name="vendas")
 ```
 
-More in [Getting Started](docs/getting-started.md).
+More in [Getting Started](https://github.com/dmux/minilake/blob/main/docs/getting-started.md).
 
 ## Documentation
 
 | | |
 |---|---|
-| [Getting Started](docs/getting-started.md) | Install, first catalog and query, internal endpoints |
-| [Configuration](docs/configuration.md) | Every environment variable, persistence, HTTPS/TLS |
-| [Databricks SDK](docs/databricks-sdk.md) | Unity Catalog, warehouses, SQL and jobs from Python |
-| [Terraform & Asset Bundles](docs/terraform.md) | The provider, and `bundle deploy` / `bundle run` |
-| [Spark & Delta Lake](docs/spark-and-delta.md) | Real Delta files, real Spark jobs, `spark.table()` by name |
-| **[MCP Server](docs/mcp/index.md)** | **67 tools for LLM agents — [examples](docs/mcp/examples.md), [tool reference](docs/mcp/tools.md), [troubleshooting](docs/mcp/troubleshooting.md)** |
-| [Testing & development](docs/testing.md) | Running the suite, adding an API group |
-| [Releases & CI/CD](docs/releases.md) | How a tag becomes a published image |
-| [Feature status](FEATURES.md) | Endpoint-by-endpoint status and design rationale |
+| [Getting Started](https://github.com/dmux/minilake/blob/main/docs/getting-started.md) | Install, first catalog and query, internal endpoints |
+| [Configuration](https://github.com/dmux/minilake/blob/main/docs/configuration.md) | Every environment variable, persistence, HTTPS/TLS |
+| [Databricks SDK](https://github.com/dmux/minilake/blob/main/docs/databricks-sdk.md) | Unity Catalog, warehouses, SQL and jobs from Python |
+| [Terraform & Asset Bundles](https://github.com/dmux/minilake/blob/main/docs/terraform.md) | The provider, and `bundle deploy` / `bundle run` |
+| [Spark & Delta Lake](https://github.com/dmux/minilake/blob/main/docs/spark-and-delta.md) | Real Delta files, real Spark jobs, `spark.table()` by name |
+| **[MCP Server](https://github.com/dmux/minilake/blob/main/docs/mcp/index.md)** | **67 tools for LLM agents — [examples](https://github.com/dmux/minilake/blob/main/docs/mcp/examples.md), [tool reference](https://github.com/dmux/minilake/blob/main/docs/mcp/tools.md), [troubleshooting](https://github.com/dmux/minilake/blob/main/docs/mcp/troubleshooting.md)** |
+| [Testing & development](https://github.com/dmux/minilake/blob/main/docs/testing.md) | Running the suite, adding an API group |
+| [Releases & CI/CD](https://github.com/dmux/minilake/blob/main/docs/releases.md) | How a tag becomes a published image |
+| [Feature status](https://github.com/dmux/minilake/blob/main/FEATURES.md) | Endpoint-by-endpoint status and design rationale |
 
 ## Supported Services
 
@@ -84,9 +84,9 @@ More in [Getting Started](docs/getting-started.md).
 | **Permissions** | ✅ Real CRUD | Single-user "allow-all" default (by design — see Gaps) |
 | **Identity (SCIM)** | ✅ Static | Fake current-user endpoint |
 | **Persistence** (`MINILAKE_PERSIST=1`) | ✅ Real | JSON snapshot on shutdown, restored on startup |
-| **Unity Catalog protocol for Spark** | ✅ Real | `spark.table("cat.sch.tbl")` resolves against minilake — see [Spark & Delta Lake](docs/spark-and-delta.md#reading-by-name-with-unity-catalog) |
+| **Unity Catalog protocol for Spark** | ✅ Real | `spark.table("cat.sch.tbl")` resolves against minilake — see [Spark & Delta Lake](https://github.com/dmux/minilake/blob/main/docs/spark-and-delta.md#reading-by-name-with-unity-catalog) |
 | **JupyterLab + PySpark + Delta** (optional) | ✅ Real | `docker compose --profile notebook up` |
-| **MCP Server** (optional, `MINILAKE_MCP=1`) | ✅ Real | 67 tools + resources + prompts at `/mcp` — see [MCP Server](docs/mcp/index.md) |
+| **MCP Server** (optional, `MINILAKE_MCP=1`) | ✅ Real | 67 tools + resources + prompts at `/mcp` — see [MCP Server](https://github.com/dmux/minilake/blob/main/docs/mcp/index.md) |
 | Secrets ACLs, Repos/Git, multi-language notebooks, DBT/pipeline tasks, Model Registry, Vector Search, Dashboards | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED` |
 
 ## Known Gaps
@@ -107,9 +107,9 @@ locally, not a shared or multi-tenant server:
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the project structure, how to add a new API
+See [CONTRIBUTING.md](https://github.com/dmux/minilake/blob/main/CONTRIBUTING.md) for the project structure, how to add a new API
 group, and the PR checklist.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/dmux/minilake/blob/main/LICENSE).
