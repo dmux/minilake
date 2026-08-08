@@ -43,7 +43,11 @@ docker compose up -d
 curl http://localhost:8000/_minilake/health
 ```
 
-No account, no API key, no sign-up. Then point any Databricks client at it:
+No account, no API key, no sign-up — and the container image downloads nothing at runtime:
+DuckDB's `delta` extension and the Delta / Unity Catalog Spark jars are baked in at build
+time, so it works air-gapped ([details](https://github.com/dmux/minilake/blob/main/docs/getting-started.md#offline-use)).
+
+Then point any Databricks client at it:
 
 ```python
 from databricks.sdk import WorkspaceClient
