@@ -1,3 +1,20 @@
+# Same build-time jar resolution as the runtime image — see Dockerfile for the rationale.
+FROM --platform=$BUILDPLATFORM apache/spark:3.5.3-scala2.12-java17-python3-ubuntu AS sparkjars
+
+USER root
+
+ARG DELTA_PACKAGE=io.delta:delta-spark_2.12:3.2.1
+ARG UC_PACKAGE=io.unitycatalog:unitycatalog-spark_2.12:0.2.1
+
+RUN mkdir -p /opt/ivy/cache /opt/ivy/jars && \
+    echo 'pass' > /tmp/warmup.py && \
+    /opt/spark/bin/spark-submit \
+        --packages "${DELTA_PACKAGE},${UC_PACKAGE}" \
+        --conf spark.jars.ivy=/opt/ivy \
+        /tmp/warmup.py && \
+    ls /opt/ivy/jars/*.jar > /dev/null
+
+
 FROM python:3.11-slim
 
 WORKDIR /opt/minilake
@@ -29,6 +46,19 @@ RUN uv pip install -e ".[mcp]" --python /usr/local/bin/python && \
     pandas>=2.0 \
     pyarrow>=14.0 \
     --python /usr/local/bin/python
+
+# Mirror the runtime image's pre-baked DuckDB extension and Ivy cache. The test runner does
+# not execute jobs itself, but it shares the data volume with the server container, and
+# keeping the two images symmetric is what stops one of them from silently drifting offline.
+# Both live outside WORKDIR: docker-compose.test.yml bind-mounts the repo over /opt/minilake,
+# which would otherwise hide them at runtime.
+ENV MINILAKE_DUCKDB_EXTENSION_DIR=/opt/duckdb-extensions
+RUN python -c "import duckdb, os; duckdb.connect(config={'extension_directory': os.environ['MINILAKE_DUCKDB_EXTENSION_DIR']}).execute('INSTALL delta')" && \
+    find "$MINILAKE_DUCKDB_EXTENSION_DIR" -name 'delta.duckdb_extension' | grep -q . && \
+    chmod -R a+rX "$MINILAKE_DUCKDB_EXTENSION_DIR"
+
+COPY --from=sparkjars /opt/ivy /opt/ivy-cache
+ENV MINILAKE_IVY_SEED=/opt/ivy-cache
 
 # Create data directory for tests
 RUN mkdir -p /data

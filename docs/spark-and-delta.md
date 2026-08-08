@@ -78,6 +78,11 @@ Anything touching Delta needs the jars, which the base image does not ship. Over
 is `delta=True`; over the Jobs API it is a `libraries` entry with the Maven coordinate
 `io.delta:delta-spark_2.12:3.2.1`.
 
+Those jars — and the Unity Catalog connector's — are resolved when the minilake image is
+built and copied onto the shared data volume on the first job run, so `--packages` resolves
+from the local Ivy cache and no job needs Maven Central. Any *other* coordinate you pass
+still does.
+
 ## Reading by name with Unity Catalog
 
 `spark.table("catalog.schema.table")` resolves against minilake. Spark's

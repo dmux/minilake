@@ -315,7 +315,7 @@ after each item, run via
 
 1. Create the table with `table_type=EXTERNAL`, `data_source_format=DELTA`, and an explicit `storage_location` (a path under the shared data volume, e.g. `/data/delta/<catalog>/<schema>/<table>`). minilake does **not** create a DuckDB-native table for this — it only registers the metadata and pre-creates `storage_location` as a world-writable directory (`0777`), because sibling containers that write to it (Spark job images, JupyterLab) each run as their own non-root UID/GID convention and there is no single group that covers all of them on a local-dev machine.
 2. Anything writes real Delta files to `storage_location` — a real Spark session (`df.write.format("delta").save(...)`), the notebook service, or the lightweight `deltalake` (delta-rs) package.
-3. `SELECT * FROM catalog.schema.table` is rewritten internally to `delta_scan('storage_location')` (DuckDB's `delta` extension, `INSTALL`/`LOAD`ed at startup) instead of the native-DuckDB-table path used for MANAGED tables.
+3. `SELECT * FROM catalog.schema.table` is rewritten internally to `delta_scan('storage_location')` (DuckDB's `delta` extension, `LOAD`ed at startup) instead of the native-DuckDB-table path used for MANAGED tables.
 
 **Request Format:**
 
@@ -344,7 +344,7 @@ after each item, run via
   - job containers join minilake's Docker network (`docker_executor._resolve_network`), or the connector cannot reach the API at all
 
 - ⚠️ **Only EXTERNAL Delta tables are visible to Spark**: a MANAGED table is a DuckDB table with no files, so it has nothing for Spark to read. This is not a gap to close — the alternative, Unity Catalog's own managed tables, use the `catalogManaged` Delta feature whose commit log lives partly in the catalog, and DuckDB's `delta_scan` cannot read those at all (`Catalog-managed table requires max_catalog_version to be set`). Keeping MANAGED on DuckDB is what preserves the fast SQL path.
-- ⚠️ First `delta_scan()` requires network access once, to `INSTALL` DuckDB's `delta` extension (fails loudly, not silently, if unavailable)
+- ✅ **No network needed in Docker**: the image installs DuckDB's `delta` extension at build time into `MINILAKE_DUCKDB_EXTENSION_DIR` (`/opt/duckdb-extensions`) and the server only `LOAD`s it, with `autoinstall_known_extensions` off so nothing can be fetched behind your back. A `pip install minilake` still `INSTALL`s the extension from `extensions.duckdb.org` on first run, and so needs network access once. Verify the image with `./scripts/verify-offline.sh`.
 
 **Status:** ✅ Complete and tested
 
@@ -445,7 +445,8 @@ after each item, run via
 
 **Known limitations:**
 
-- ⚠️ First run pulls the Spark image if not already cached (can take a while; subsequent runs are fast — `prewarm_spark_image()` pre-pulls it best-effort at server startup)
+- ⚠️ First run pulls the Spark image if not already cached (can take a while; subsequent runs are fast — `prewarm_spark_image()` pre-pulls it best-effort at server startup, and `MINILAKE_SPARK_PREWARM=0` skips the attempt on an offline machine). This is the one dependency an image cannot bake in — a Docker image cannot contain another Docker image — so offline use means pulling `apache/spark:3.5.3-scala2.12-java17-python3-ubuntu` once while you still have network
+- ✅ The Delta and Unity Catalog connector jars *are* baked in: the image resolves them at build time with `spark-submit` and copies that Ivy cache onto the shared data volume on first use (`docker_executor._seed_ivy_cache`), so `spark-submit --packages` resolves locally. Only extra coordinates you pass yourself (`libraries` on a task, `packages=[...]` on the MCP tool) still need Maven Central
 - ⚠️ Job/run history survives a restart only when `MINILAKE_PERSIST=1` (see Persistence below) — running job containers are not resumed, only completed run records are restored
 
 **Status:** ✅ Complete and tested (`tests/test_jobs.py`, `tests/test_docker_executor.py` — real container/subprocess execution, DAG scheduling, secret injection, `sql_task`)

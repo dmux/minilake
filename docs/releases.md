@@ -26,7 +26,12 @@ That triggers [`release.yml`](../.github/workflows/release.yml), which:
    everything downstream — a mismatch would ship an image labelled one version and a wheel
    containing another, and a PyPI upload cannot be replaced afterwards.
 2. Builds a multi-arch image (`amd64` + `arm64`) and pushes it to GHCR as
-   `ghcr.io/dmux/minilake:X.Y.Z`, `:X.Y` and `:latest`
+   `ghcr.io/dmux/minilake:X.Y.Z`, `:X.Y` and `:latest`. The build needs network for more
+   than pip: it also installs DuckDB's `delta` extension and resolves the Delta / Unity
+   Catalog Spark jars, which is what lets the resulting image run with none. That costs
+   roughly 100 MB of image size and one extra `spark-submit` stage, and the build fails
+   outright if either fetch does not land — better than silently publishing an image that
+   goes back to downloading at boot.
 3. Builds the sdist and wheel and **publishes them to PyPI**
 4. Creates a [GitHub Release](https://github.com/dmux/minilake/releases) with generated notes
 
