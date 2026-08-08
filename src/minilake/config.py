@@ -37,6 +37,13 @@ class Settings(BaseSettings):
 
     # DuckDB settings
     duckdb_memory_limit: str = os.getenv("MINILAKE_DUCKDB_MEMORY_LIMIT", "4GB")
+    # Directory holding pre-installed DuckDB extensions. The Docker image sets this and
+    # populates it at build time, which is what makes the container work with no network:
+    # when it is set, startup only LOADs the `delta` extension and never INSTALLs it. Unset
+    # (a plain `pip install minilake`) keeps the download-on-first-run behaviour.
+    duckdb_extension_dir: Optional[Path] = (
+        Path(os.environ["MINILAKE_DUCKDB_EXTENSION_DIR"]) if os.getenv("MINILAKE_DUCKDB_EXTENSION_DIR") else None
+    )
 
     # TLS / native HTTPS — lets the Databricks CLI (which wants an https:// host)
     # talk to minilake without a separate TLS proxy. When enabled, minilake serves

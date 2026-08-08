@@ -44,6 +44,24 @@ docker compose up -d
 `docker compose` wires the socket, the volume and the environment for you, and is the
 closest thing to a reference deployment.
 
+### Offline use
+
+The image downloads nothing at runtime. DuckDB's `delta` extension and the Delta / Unity
+Catalog Spark jars are both resolved at build time and shipped inside it, so a container
+reads EXTERNAL Delta tables on an air-gapped machine. `./scripts/verify-offline.sh` proves
+it by running the image under `docker run --network none`.
+
+One thing an image cannot contain is another image. If you want Jobs to run on real Spark
+offline, pull the executor image once while you still have network:
+
+```bash
+docker pull apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
+```
+
+Then set `MINILAKE_SPARK_PREWARM=0` to stop minilake from re-checking for it at startup.
+Maven coordinates you supply yourself — a task's `libraries`, or `packages=[...]` on the
+MCP job tool — are still fetched from Maven Central on first use.
+
 ## Verify
 
 ```bash
