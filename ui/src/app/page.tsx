@@ -26,7 +26,8 @@ import {
 import { executeSql, getWarehouses } from "@/lib/api"
 
 export default function Workspace() {
-  const { setTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const monaco = useMonaco()
   
   const [query, setQuery] = useState("SELECT 1 AS test_col;")
@@ -41,6 +42,7 @@ export default function Workspace() {
   const [catalogs, setCatalogs] = useState<any[]>([])
   
   useEffect(() => {
+    setMounted(true)
     // Fetch warehouses
     getWarehouses().then(wh => {
       setWarehouses(wh)
@@ -116,12 +118,10 @@ export default function Workspace() {
           </select>
           <DropdownMenu>
             {/* @ts-ignore */}
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                <span className="sr-only">Toggle theme</span>
-              </Button>
+            <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent hover:text-accent-foreground h-9 w-9">
+              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              <span className="sr-only">Toggle theme</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setTheme("light")}>
@@ -178,7 +178,7 @@ export default function Workspace() {
                 <Editor
                   height="100%"
                   language="sql"
-                  theme="vs-dark"
+                  theme={mounted && theme === "dark" ? "vs-dark" : "light"}
                   value={query}
                   onChange={(val) => setQuery(val || "")}
                   options={{
