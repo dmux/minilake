@@ -16,6 +16,7 @@ see files written under `settings.data_dir` (e.g. imported workspace notebooks).
 import asyncio
 import logging
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,10 @@ DEFAULT_TIMEOUT_SECONDS = 600
 # all ("Catalog-managed table requires max_catalog_version to be set"). That would
 # break the write-with-Spark/read-with-SQL loop this project is built around.
 DEFAULT_DELTA_PACKAGE = os.environ.get("MINILAKE_DELTA_PACKAGE", "io.delta:delta-spark_2.12:3.2.1")
+
+# Marks an Ivy home as already seeded from MINILAKE_IVY_SEED, so the copy happens once per
+# data volume rather than on every job run.
+_IVY_SEED_MARKER = ".minilake-seeded"
 
 
 def _executor_mode() -> str:
@@ -252,7 +257,7 @@ async def run_python_task(
 
 
 def _prepare_ivy_cache() -> str:
-    """Create the Ivy home on the shared volume and return it.
+    """Create the Ivy home on the shared volume, seed it from the image, and return it.
 
     Ivy writes its resolved-*.xml descriptors into `<ivy.home>/cache` but never
     mkdirs it, so pointing spark.jars.ivy at a fresh directory makes the very
@@ -261,7 +266,51 @@ def _prepare_ivy_cache() -> str:
     ivy_home = settings.data_dir / ".ivy2-cache"
     for path in (ivy_home / "cache", ivy_home / "jars"):
         ensure_writable_dir(path)
+    _seed_ivy_cache(ivy_home)
     return str(ivy_home)
+
+
+def _seed_ivy_cache(ivy_home: Path) -> None:
+    """Copy the image's pre-resolved Delta/Unity-Catalog jars into the shared Ivy home.
+
+    The Docker image resolves those coordinates at build time into MINILAKE_IVY_SEED, so a
+    job never has to reach Maven Central. That directory lives inside *this* container
+    though, and the Spark container is a sibling: the only filesystem the two share is the
+    data volume, so the cache has to be copied there rather than mounted.
+
+    Copied once per volume, guarded by a marker file. Failure is a warning, not an error —
+    without the seed, resolution merely falls back to the network, which is what happened
+    before the cache was baked in at all.
+    """
+    seed = os.environ.get("MINILAKE_IVY_SEED")
+    if not seed:
+        return
+    seed_path = Path(seed)
+    marker = ivy_home / _IVY_SEED_MARKER
+    if marker.exists() or not seed_path.is_dir():
+        return
+    try:
+        # dirs_exist_ok: anything the user already resolved into this volume wins over the
+        # baked copy rather than being clobbered.
+        shutil.copytree(seed_path, ivy_home, dirs_exist_ok=True)
+        # The Spark image runs as uid 185 and Ivy writes into this tree. ensure_writable_dir
+        # only walks from a leaf up to data_dir, so the copied subtree needs its own pass.
+        for root, dirs, files in os.walk(ivy_home):
+            for name in dirs:
+                _chmod_quietly(Path(root) / name, 0o777)
+            for name in files:
+                _chmod_quietly(Path(root) / name, 0o666)
+        marker.touch()
+        logger.info(f"Seeded Ivy cache at {ivy_home} from {seed_path}")
+    except OSError as e:
+        logger.warning(f"Could not seed the Ivy cache from {seed_path} (non-critical): {e}")
+
+
+def _chmod_quietly(path: Path, mode: int) -> None:
+    try:
+        path.chmod(mode)
+    except OSError:
+        pass
 
 
 def prewarm_spark_image(image: Optional[str] = None) -> None:
@@ -269,8 +318,16 @@ def prewarm_spark_image(image: Optional[str] = None) -> None:
 
     Called once from app startup in a background task so the *first* real job
     run doesn't pay the image-pull cold-start cost. No-op in subprocess mode.
+
+    This is the one thing an image cannot bake in — a Docker image cannot contain another
+    Docker image — so on an offline machine it is the single remaining network call at
+    startup. It already fails harmlessly, but `MINILAKE_SPARK_PREWARM=0` skips the attempt
+    (and its several-second timeout) outright.
     """
     if _executor_mode() == "subprocess":
+        return
+    if os.environ.get("MINILAKE_SPARK_PREWARM", "").strip().lower() in ("0", "false", "no"):
+        logger.info("Skipping Spark image pre-pull (MINILAKE_SPARK_PREWARM disabled)")
         return
     spark_image = image or os.environ.get("MINILAKE_SPARK_IMAGE", DEFAULT_SPARK_IMAGE)
     try:

@@ -7,6 +7,8 @@ from typing import Optional
 
 import duckdb
 
+from minilake.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,9 +20,13 @@ class DuckDBPool:
     - All connections are serialized with asyncio.Lock to respect DuckDB's single-writer model
     """
 
-    def __init__(self, data_dir: Path):
+    def __init__(self, data_dir: Path, extension_dir: Optional[Path] = None):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Where DuckDB looks for extensions. Set by the Docker image to a directory populated
+        # at build time; None for a plain pip install, where extensions are downloaded on demand.
+        self.extension_dir = extension_dir if extension_dir is not None else settings.duckdb_extension_dir
 
         # Shared Unity Catalog connection
         self._uc_connection: Optional[duckdb.DuckDBPyConnection] = None
@@ -33,22 +39,59 @@ class DuckDBPool:
         # Global lock for warehouse dict modifications
         self._warehouse_dict_lock = asyncio.Lock()
 
+    def _connect_config(self) -> dict:
+        """Connection config pinning DuckDB to the pre-installed extension directory.
+
+        Empty when there is none, which leaves DuckDB on its default `$HOME/.duckdb`.
+        `autoinstall_known_extensions=False` is the part that guarantees offline operation:
+        without it DuckDB silently reaches for extensions.duckdb.org the first time a query
+        touches a function from an extension that isn't loaded yet.
+        """
+        if self.extension_dir is None:
+            return {}
+        return {
+            "extension_directory": str(self.extension_dir),
+            "autoinstall_known_extensions": False,
+        }
+
     async def _get_uc_connection(self) -> duckdb.DuckDBPyConnection:
         """Get or create the shared Unity Catalog DuckDB connection."""
         if self._uc_connection is None:
             uc_path = self.data_dir / "unity_catalog.duckdb"
-            self._uc_connection = duckdb.connect(str(uc_path))
+            self._uc_connection = duckdb.connect(str(uc_path), config=self._connect_config())
             await self._init_delta_extension()
         return self._uc_connection
 
     async def _init_delta_extension(self) -> None:
-        """Install/load DuckDB's `delta` extension so EXTERNAL Delta tables
-        (written by e.g. a real Spark/notebook session sharing the data volume)
-        can be read via `delta_scan(storage_location)`. Best-effort: querying
-        an EXTERNAL Delta table will fail loudly later if this doesn't succeed
-        (e.g. no network access to fetch the extension on first run)."""
+        """Load DuckDB's `delta` extension so EXTERNAL Delta tables (written by e.g. a real
+        Spark/notebook session sharing the data volume) can be read via
+        `delta_scan(storage_location)`.
+
+        Two paths, because only one of them may touch the network:
+
+        - `extension_dir` set (the Docker image, populated at build time): `LOAD` only. An
+          `INSTALL` here would be exactly the runtime download this directory exists to avoid.
+        - `extension_dir` unset (`pip install minilake`): `INSTALL` then `LOAD`, which needs
+          network access once, on first run.
+
+        Either way a failure is logged rather than raised — the server is still fully usable
+        for everything that is not an EXTERNAL Delta table, and `delta_scan()` fails on its
+        own terms later.
+        """
         conn = self._uc_connection
         if conn is None:
+            return
+        if self.extension_dir is not None:
+            try:
+                conn.execute("LOAD delta")
+                logger.info(f"DuckDB delta extension loaded from {self.extension_dir}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to load the pre-installed DuckDB delta extension from "
+                    f"{self.extension_dir} (duckdb {duckdb.__version__}): {e}. "
+                    "EXTERNAL Delta tables will not be readable. Rebuild the image, or unset "
+                    "MINILAKE_DUCKDB_EXTENSION_DIR to fall back to downloading the extension."
+                )
             return
         try:
             conn.execute("INSTALL delta")
@@ -104,7 +147,7 @@ class DuckDBPool:
                 # Create a new connection (in-memory by default, or persisted file if preferred)
                 wh_path = self.data_dir / "warehouses" / f"{warehouse_id}.duckdb"
                 wh_path.parent.mkdir(parents=True, exist_ok=True)
-                conn = duckdb.connect(str(wh_path))
+                conn = duckdb.connect(str(wh_path), config=self._connect_config())
                 self._warehouse_connections[warehouse_id] = conn
                 self._warehouse_locks[warehouse_id] = asyncio.Lock()
                 logger.info(f"Created DuckDB connection for warehouse {warehouse_id}")

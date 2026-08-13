@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minilake"
-version = "1.5.1"
+version = "1.6.0"
 description = "A local Databricks API emulator backed by DuckDB."
 readme = "README.md"
 requires-python = ">=3.11"

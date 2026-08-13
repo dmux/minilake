@@ -71,6 +71,7 @@ def test_prepare_ivy_cache_creates_resolution_dir(monkeypatch, tmp_path: Path):
     without this the first --packages run dies with FileNotFoundException.
     """
     monkeypatch.setattr(docker_executor.settings, "data_dir", tmp_path)
+    monkeypatch.delenv("MINILAKE_IVY_SEED", raising=False)
 
     ivy_home = Path(docker_executor._prepare_ivy_cache())
 
@@ -78,6 +79,70 @@ def test_prepare_ivy_cache_creates_resolution_dir(monkeypatch, tmp_path: Path):
     assert (ivy_home / "cache").is_dir()
     assert (ivy_home / "jars").is_dir()
     print("✓ Ivy home is pre-created with its cache/ and jars/ subdirs")
+
+
+@pytest.mark.crud
+def test_prepare_ivy_cache_seeds_jars_from_the_image(monkeypatch, tmp_path: Path):
+    """The image's pre-resolved jars land on the shared volume, so a job needs no Maven.
+
+    The Spark container is a sibling and cannot see MINILAKE_IVY_SEED inside the minilake
+    container — only the data volume — so the seed has to be a real copy.
+    """
+    seed = tmp_path / "image-ivy"
+    (seed / "jars").mkdir(parents=True)
+    (seed / "jars" / "delta-spark_2.12-3.2.1.jar").write_text("jar")
+    (seed / "cache").mkdir()
+    (seed / "cache" / "ivy-3.2.1.xml").write_text("<ivy/>")
+
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(docker_executor.settings, "data_dir", data_dir)
+    monkeypatch.setenv("MINILAKE_IVY_SEED", str(seed))
+
+    ivy_home = Path(docker_executor._prepare_ivy_cache())
+
+    assert (ivy_home / "jars" / "delta-spark_2.12-3.2.1.jar").read_text() == "jar"
+    # The ivy-*.xml metadata matters as much as the jar: without it Ivy re-resolves from
+    # the network even when the jar is already on disk.
+    assert (ivy_home / "cache" / "ivy-3.2.1.xml").is_file()
+    assert (ivy_home / docker_executor._IVY_SEED_MARKER).exists()
+    print("✓ Ivy cache seeded from the image onto the shared volume")
+
+
+@pytest.mark.crud
+def test_ivy_cache_seed_is_idempotent_and_never_clobbers(monkeypatch, tmp_path: Path):
+    """A second call is a no-op, and a jar the user already resolved survives."""
+    seed = tmp_path / "image-ivy"
+    (seed / "jars").mkdir(parents=True)
+    (seed / "jars" / "delta-spark_2.12-3.2.1.jar").write_text("from-image")
+
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(docker_executor.settings, "data_dir", data_dir)
+    monkeypatch.setenv("MINILAKE_IVY_SEED", str(seed))
+
+    ivy_home = Path(docker_executor._prepare_ivy_cache())
+    user_jar = ivy_home / "jars" / "user-resolved.jar"
+    user_jar.write_text("resolved-later")
+    (ivy_home / "jars" / "delta-spark_2.12-3.2.1.jar").write_text("locally-updated")
+
+    docker_executor._prepare_ivy_cache()
+
+    assert user_jar.read_text() == "resolved-later"
+    assert (ivy_home / "jars" / "delta-spark_2.12-3.2.1.jar").read_text() == "locally-updated"
+    print("✓ Ivy seed runs once and leaves an existing cache alone")
+
+
+@pytest.mark.crud
+def test_ivy_cache_seed_survives_a_missing_seed_dir(monkeypatch, tmp_path: Path):
+    """A bad MINILAKE_IVY_SEED degrades to Maven resolution, it does not break job setup."""
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(docker_executor.settings, "data_dir", data_dir)
+    monkeypatch.setenv("MINILAKE_IVY_SEED", str(tmp_path / "does-not-exist"))
+
+    ivy_home = Path(docker_executor._prepare_ivy_cache())
+
+    assert (ivy_home / "cache").is_dir()
+    assert not (ivy_home / docker_executor._IVY_SEED_MARKER).exists()
+    print("✓ a missing Ivy seed directory is harmless")
 
 
 @pytest.mark.error
