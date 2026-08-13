@@ -7,8 +7,13 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
 import os
+import mimetypes
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
+mimetypes.add_type("image/svg+xml", ".svg")
 
 try:
     # Single source of truth: the version declared in pyproject.toml.
