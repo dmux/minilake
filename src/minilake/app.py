@@ -6,7 +6,9 @@ import textwrap
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
 
+import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 try:
     # Single source of truth: the version declared in pyproject.toml.
@@ -163,6 +165,12 @@ def create_app() -> FastAPI:
     for service_name, router in get_enabled_routers():
         logger.info(f"Including router for service: {service_name}")
         app.include_router(router)
+
+    # Mount UI if available
+    ui_dir = os.path.join(os.path.dirname(__file__), "..", "..", "ui", "out")
+    if os.path.exists(ui_dir):
+        app.mount("/ui", StaticFiles(directory=ui_dir, html=True), name="ui")
+
 
     # MCP must be attached last: its ASGI app is mounted at "/" and a root mount matches
     # every path, so anything registered after it becomes unreachable. Routes registered

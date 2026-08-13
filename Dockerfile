@@ -1,3 +1,11 @@
+FROM node:24-slim AS frontend-builder
+WORKDIR /app/ui
+RUN npm install -g pnpm
+COPY ui/package.json ui/pnpm-lock.yaml ./
+RUN pnpm install
+COPY ui/ ./
+RUN pnpm run build
+
 FROM python:3.11-slim
 
 WORKDIR /opt/minilake
@@ -12,6 +20,7 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml pyproject.toml
 COPY src/ src/
 COPY README.md README.md
+COPY --from=frontend-builder /app/ui/out /opt/minilake/ui/out
 
 # Install minilake with the MCP extra. Baked into the image so MINILAKE_MCP=1 is all that's
 # needed to turn the MCP server on; the extra stays optional for PyPI installs.
