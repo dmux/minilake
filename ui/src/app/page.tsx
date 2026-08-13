@@ -38,9 +38,9 @@ export default function Workspace() {
   const [isRunning, setIsRunning] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
-  const [history, setHistory] = useState<any[]>([])
-
   const [catalogs, setCatalogs] = useState<any[]>([])
+  const [history, setHistory] = useState<{query: string, time: string, status: string, duration?: string}[]>([])
+  const [activeTab, setActiveTab] = useState("results")
   
   useEffect(() => {
     setMounted(true)
@@ -83,27 +83,30 @@ export default function Workspace() {
     setIsRunning(true)
     setError(null)
     setResult(null)
+    setActiveTab("results")
     
     const startTime = Date.now()
     try {
-      const res = await executeSql(query, warehouseId)
-      setResult(res)
-      saveHistory({
+      const response = await executeSql(query, warehouseId)
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2) + "s"
+      
+      setResult(response)
+      
+      const status = response.status?.state || "SUCCESS"
+      setHistory(prev => [{
         query,
-        time: new Date().toISOString(),
-        duration: Date.now() - startTime,
-        status: "success",
-        rows: res.result?.row_count || 0
-      })
+        time: new Date().toLocaleTimeString(),
+        status: status,
+        duration
+      }, ...prev].slice(0, 50))
     } catch (err: any) {
       setError(err.message)
-      saveHistory({
+      setHistory(prev => [{
         query,
-        time: new Date().toISOString(),
-        duration: Date.now() - startTime,
-        status: "error",
-        error: err.message
-      })
+        time: new Date().toLocaleTimeString(),
+        status: "ERROR",
+        duration: ((Date.now() - startTime) / 1000).toFixed(2) + "s"
+      }, ...prev].slice(0, 50))
     } finally {
       setIsRunning(false)
     }
@@ -205,7 +208,7 @@ export default function Workspace() {
             
             {/* Bottom - Results */}
             <ResizablePanel defaultSize={50} minSize={20}>
-              <Tabs defaultValue="results" className="h-full flex flex-col">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
                 <div className="border-b px-4">
                   <TabsList className="h-10 bg-transparent">
                     <TabsTrigger value="results" className="data-[state=active]:bg-muted data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-primary rounded-none">
@@ -272,23 +275,31 @@ export default function Workspace() {
                         <TableRow>
                           <TableHead>Time</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Duration (ms)</TableHead>
+                          <TableHead>Duration</TableHead>
                           <TableHead>Query</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {history.map((item, i) => (
-                          <TableRow key={i}>
-                            <TableCell className="whitespace-nowrap">{new Date(item.time).toLocaleTimeString()}</TableCell>
-                            <TableCell>
-                              <span className={`px-2 py-1 rounded text-xs ${item.status === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                {item.status}
-                              </span>
+                        {history.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                              No query history yet.
                             </TableCell>
-                            <TableCell>{item.duration}</TableCell>
-                            <TableCell className="font-mono text-xs max-w-[300px] truncate">{item.query}</TableCell>
                           </TableRow>
-                        ))}
+                        ) : (
+                          history.map((item, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="whitespace-nowrap">{item.time}</TableCell>
+                              <TableCell>
+                                <span className={`px-2 py-1 rounded text-xs ${(item.status === 'SUCCEEDED' || item.status === 'FINISHED') ? 'bg-emerald-500/10 text-emerald-500' : 'bg-destructive/10 text-destructive'}`}>
+                                  {item.status}
+                                </span>
+                              </TableCell>
+                              <TableCell>{item.duration || "-"}</TableCell>
+                              <TableCell className="font-mono text-xs max-w-[300px] truncate">{item.query}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
                       </TableBody>
                     </Table>
                   </ScrollArea>
