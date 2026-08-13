@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table"
 
 import { executeSql, getWarehouses } from "@/lib/api"
+import { DatabaseExplorer } from "@/components/database-explorer"
 
 export default function Workspace() {
   const { theme, setTheme } = useTheme()
@@ -64,6 +65,16 @@ export default function Workspace() {
     try {
       localStorage.setItem("minilake_history", JSON.stringify(newHistory))
     } catch(e) {}
+  }
+
+  const appendTableToQuery = (catalog: string, schema: string, table: string) => {
+    const tableRef = `\`${catalog}\`.\`${schema}\`.\`${table}\``
+    setQuery(prev => {
+      if (prev.trim() === "SELECT 1 AS test_col;") {
+        return `SELECT * FROM ${tableRef} LIMIT 10;`
+      }
+      return prev + ` ${tableRef}`
+    })
   }
 
   const runQuery = async () => {
@@ -141,16 +152,15 @@ export default function Workspace() {
       {/* @ts-ignore */}
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* Left Sidebar - Explorer */}
-        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="bg-muted/30">
-          <div className="p-4 h-full flex flex-col">
-            <h2 className="text-sm font-semibold mb-4">Database Explorer</h2>
-            <ScrollArea className="flex-1">
-              <div className="text-sm text-muted-foreground">
-                <p>Explorer coming soon.</p>
-                <p className="mt-2 text-xs">Run SHOW CATALOGS to list catalogs.</p>
-              </div>
-            </ScrollArea>
+        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="flex flex-col bg-muted/30">
+          <div className="p-3 border-b border-border flex items-center justify-between font-medium text-sm">
+            Database Explorer
           </div>
+          <ScrollArea className="flex-1">
+            <div className="p-2">
+              <DatabaseExplorer onSelectTable={appendTableToQuery} />
+            </div>
+          </ScrollArea>
         </ResizablePanel>
         
         <ResizableHandle withHandle />
