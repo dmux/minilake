@@ -17,6 +17,7 @@ know what you need, use the map below.
 
 | Page | What's in it |
 |---|---|
+| [Web UI](ui.md) | The built-in SQL workspace at `/ui` — query editor, data catalog, saved queries, history |
 | [Databricks SDK](databricks-sdk.md) | Python `WorkspaceClient` against minilake: Unity Catalog, warehouses, SQL, jobs |
 | [Terraform & Asset Bundles](terraform.md) | The `databricks` provider, and `bundle deploy` / `bundle run` end to end |
 | [Spark & Delta Lake](spark-and-delta.md) | EXTERNAL Delta tables, the write-with-Spark/read-with-SQL loop, `spark.table()` by name, JupyterLab |

@@ -26,6 +26,7 @@ SERVICE_REGISTRY = {
     "files": "minilake.services.files",
     "sql_statements": "minilake.services.sql_statements",
     "sql_warehouses": "minilake.services.sql_warehouses",
+    "saved_queries": "minilake.services.saved_queries",
     "unity_catalog": "minilake.services.unity_catalog",
     "workspace": "minilake.services.workspace",
     "clusters": "minilake.services.clusters",

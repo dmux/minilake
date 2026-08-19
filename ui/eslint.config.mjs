@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Monaco's prebuilt AMD bundle, copied in by scripts/copy-monaco.mjs. Third-party
+    // minified output — linting it produces thousands of warnings about code we do
+    // not own and cannot change.
+    "public/monaco/**",
   ]),
 ]);
 

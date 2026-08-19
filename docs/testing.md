@@ -26,6 +26,23 @@ Or the wrapper: `bash scripts/run-tests-docker.sh`.
 `tests/conftest.py` detects Compose mode via `MINILAKE_DATA_DIR=/data` and points the SDK at
 `http://minilake-test-server:8000` instead of spawning a local subprocess.
 
+### The web UI
+
+`minilake-test-server` is built from the main `Dockerfile`, which includes the frontend
+stage — so `tests/test_ui_assets.py` exercises the real, served `/ui`. (`Dockerfile.test`
+has no Node stage; those tests skip if the mount is missing rather than failing.)
+
+The UI's own checks are separate and do not need Docker:
+
+```bash
+cd ui
+pnpm install
+pnpm lint
+pnpm typecheck
+pnpm test      # vitest, over the pure helpers in src/lib
+pnpm build     # static export, also staged into src/minilake/ui_static
+```
+
 ## Test layout
 
 ```

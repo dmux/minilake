@@ -35,6 +35,16 @@ class Settings(BaseSettings):
     cluster_start_delay_seconds: float = float(os.getenv("MINILAKE_CLUSTER_START_DELAY", "1"))
     cluster_terminate_delay_seconds: float = float(os.getenv("MINILAKE_CLUSTER_TERMINATE_DELAY", "0.5"))
 
+    # How many executed statements to keep. The cache backs both `GET /statements/{id}`
+    # and the query history API, so it is now user-visible and needs a ceiling: without
+    # one, every result set a long-lived server ever produced stays resident.
+    statement_cache_size: int = int(os.getenv("MINILAKE_STATEMENT_CACHE_SIZE", "500"))
+
+    # Relax same-origin for the embedded UI's dev server (`pnpm dev` on :3000). Off by
+    # default: the packaged UI is served from this same origin at /ui and needs no CORS,
+    # and minilake has no auth to fall back on.
+    dev_cors: bool = os.getenv("MINILAKE_DEV_CORS", "").lower() in ("1", "true", "yes")
+
     # DuckDB settings
     duckdb_memory_limit: str = os.getenv("MINILAKE_DUCKDB_MEMORY_LIMIT", "4GB")
     # Directory holding pre-installed DuckDB extensions. The Docker image sets this and
@@ -80,6 +90,21 @@ class Settings(BaseSettings):
     # context. The full logs stay available through get_run_output.
     mcp_max_log_chars: int = int(os.getenv("MINILAKE_MCP_MAX_LOG_CHARS", "8000"))
 
+    # Embedded JupyterLab, served through minilake's own origin at `notebook_path`.
+    # On by default — but only reachable through this proxy: the Jupyter process itself
+    # binds 127.0.0.1, so it is exposed exactly as far as minilake is and no further.
+    # Set MINILAKE_NOTEBOOK=0 to leave it off.
+    notebook_enabled: bool = os.getenv("MINILAKE_NOTEBOOK", "1").lower() in ("1", "true", "yes")
+    notebook_path: str = os.getenv("MINILAKE_NOTEBOOK_PATH", "/jupyter")
+    # Port for the loopback Jupyter process. 0 asks the OS for a free one, which is
+    # what keeps two minilake instances on one machine from colliding.
+    notebook_port: int = int(os.getenv("MINILAKE_NOTEBOOK_PORT", "0"))
+    # Where notebooks live. Under data_dir so they survive a container restart on the
+    # same volume, next to everything else that persists.
+    notebook_dir: Optional[Path] = (
+        Path(os.environ["MINILAKE_NOTEBOOK_DIR"]) if os.getenv("MINILAKE_NOTEBOOK_DIR") else None
+    )
+
     class Config:
         env_prefix = "MINILAKE_"
         extra = "allow"
@@ -107,6 +132,11 @@ class Settings(BaseSettings):
     def tls_san_list(self) -> list[str]:
         """SAN hostnames/IPs for the auto-generated TLS cert."""
         return [s.strip() for s in self.tls_san.split(",") if s.strip()]
+
+    @property
+    def resolved_notebook_dir(self) -> Path:
+        """Where JupyterLab opens. Defaults to `<data_dir>/notebooks`."""
+        return self.notebook_dir if self.notebook_dir is not None else self.data_dir / "notebooks"
 
     @property
     def mcp_allowed_hosts_list(self) -> list[str]:

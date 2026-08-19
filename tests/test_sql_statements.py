@@ -61,6 +61,50 @@ def test_execute_select_empty_table(workspace_client: WorkspaceClient):
 
 
 @pytest.mark.crud
+def test_result_manifest_carries_column_types(workspace_client: WorkspaceClient):
+    """The result manifest reports each column's type.
+
+    Read through `manifest.schema`, not `result.columns`: the SDK's `ResultData`
+    has no `columns` field, so a schema published only there never reaches a
+    typed client.
+    """
+    wh = workspace_client.warehouses.create(name="coltype_wh")
+
+    response = workspace_client.statement_execution.execute_statement(
+        warehouse_id=wh.id,
+        statement="SELECT 1 AS an_int, 'x' AS a_string, count(*) AS a_count",
+    )
+
+    assert response.manifest is not None
+    schema = response.manifest.schema
+    assert schema.column_count == 3
+
+    by_name = {c.name: c for c in schema.columns}
+    assert by_name["an_int"].type_text == "INTEGER"
+    assert by_name["a_string"].type_text == "VARCHAR"
+    assert by_name["a_count"].type_text == "BIGINT"
+    assert [c.position for c in schema.columns] == [0, 1, 2]
+    assert response.manifest.total_row_count == 1
+
+    print("✓ Result manifest carries DuckDB column types")
+
+
+@pytest.mark.crud
+def test_get_statement_returns_manifest(workspace_client: WorkspaceClient):
+    """Polling a statement returns the same schema the execute call did."""
+    wh = workspace_client.warehouses.create(name="manifest_poll_wh")
+    executed = workspace_client.statement_execution.execute_statement(warehouse_id=wh.id, statement="SELECT 7 AS lucky")
+
+    fetched = workspace_client.statement_execution.get_statement(statement_id=executed.statement_id)
+
+    assert fetched.manifest is not None
+    assert [c.name for c in fetched.manifest.schema.columns] == ["lucky"]
+    assert fetched.manifest.schema.columns[0].type_text == "INTEGER"
+
+    print("✓ get_statement returns the result manifest")
+
+
+@pytest.mark.crud
 def test_execute_insert_and_select(warehouse_with_table, workspace_client):
     """Test: INSERT and SELECT data through SQL statements."""
     wh, cat, schema, table = warehouse_with_table

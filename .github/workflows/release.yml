@@ -102,6 +102,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The wheel force-includes ui/out, which is generated, not committed. Without
+      # this step `uv build` silently produces a wheel with no web UI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build the web UI
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm run build
+        working-directory: ui
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 

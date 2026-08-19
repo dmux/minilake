@@ -14,6 +14,8 @@ Everything is set through environment variables. Nothing needs a config file.
 | `MINILAKE_VERBOSE` | unset | `1` for full `INFO` logs (per-request access logs, SQL and job traces). Off by default — only the startup banner and warnings appear |
 | `MINILAKE_SERVICES` | (all) | Comma-separated allowlist, e.g. `unity_catalog,sql_statements,sql_warehouses` |
 | `MINILAKE_DUCKDB_MEMORY_LIMIT` | `4GB` | Declared but not yet applied to any connection — currently a no-op |
+| `MINILAKE_STATEMENT_CACHE_SIZE` | `500` | How many executed statements to keep. Backs both `GET /statements/{id}` and query history; the oldest lose their rows first, then their metadata |
+| `MINILAKE_DEV_CORS` | unset | `1` allows cross-origin API access, for running the web UI's Next.js dev server on another port. Leave off otherwise — minilake has no authentication ([Web UI](ui.md#development)) |
 | `MINILAKE_DUCKDB_EXTENSION_DIR` | unset (`/opt/duckdb-extensions` in the image) | Directory of pre-installed DuckDB extensions. When set, the server only `LOAD`s the `delta` extension and never downloads it, which is what makes the image work with no internet access |
 
 ### Persistence
@@ -50,6 +52,25 @@ Everything is set through environment variables. Nothing needs a config file.
 |---|---|---|
 | `MINILAKE_CLUSTER_START_DELAY` | `1` | Seconds a cluster spends in `PENDING` |
 | `MINILAKE_CLUSTER_TERMINATE_DELAY` | `0.5` | Seconds a cluster spends in `TERMINATING` |
+
+### Notebooks
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MINILAKE_NOTEBOOK` | `1` | `0` disables the embedded JupyterLab and unmounts `/jupyter` |
+| `MINILAKE_NOTEBOOK_PATH` | `/jupyter` | Where the notebook server is proxied. Must stay same-origin — see below |
+| `MINILAKE_NOTEBOOK_PORT` | `0` (any free port) | Loopback port for the JupyterLab process. Pin it only to make debugging easier |
+| `MINILAKE_NOTEBOOK_DIR` | `<MINILAKE_DATA_DIR>/notebooks` | Where JupyterLab opens. Seeded once with the bundled quickstart, which is never overwritten afterwards |
+
+JupyterLab runs as a child process bound to **127.0.0.1** and is reachable only through
+minilake's own proxy, so it is exposed exactly as far as minilake is and no further. It
+needs the `notebook` extra (`pip install "minilake[notebook]"`); the Docker image bundles
+it. Serving it same-origin is load-bearing, not cosmetic: jupyter-server sends
+`Content-Security-Policy: frame-ancestors 'self'`, so the UI could not embed a notebook
+server running on its own port without weakening that policy.
+
+Two cells inside a notebook get their bearings from the environment minilake injects:
+`MINILAKE_HOST` (the server that launched it) and `MINILAKE_DATA_DIR`.
 
 ### MCP
 

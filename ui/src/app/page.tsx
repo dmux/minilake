@@ -1,314 +1,118 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect, useRef } from "react"
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Button } from "@/components/ui/button"
-import { Play, Loader2, Database, Table as TableIcon, Moon, Sun, Monitor } from "lucide-react"
-import { useTheme } from "next-themes"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import Editor, { useMonaco } from '@monaco-editor/react'
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { CatalogTree } from "@/components/catalog/catalog-tree";
+import { DdlDialog } from "@/components/catalog/ddl-dialog";
+import { EditorToolbar } from "@/components/editor/editor-toolbar";
+import { QueryTabs } from "@/components/editor/query-tabs";
+import { SqlEditor } from "@/components/editor/sql-editor";
+import { WorkspaceShell } from "@/components/layout/workspace-shell";
+import { ResultsPanel } from "@/components/results/results-panel";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { useQueryExecution } from "@/hooks/use-query-execution";
+import type { Table as TableModel } from "@/lib/api/types";
+import { previewStatement, tableRef } from "@/lib/sql-identifier";
+import { useEditorTabsStore } from "@/stores/editor-tabs";
 
-import { executeSql, getWarehouses } from "@/lib/api"
-import { DatabaseExplorer } from "@/components/database-explorer"
+export default function QueryEditorPage() {
+  const tabs = useEditorTabsStore((s) => s.tabs);
+  const activeTabId = useEditorTabsStore((s) => s.activeTabId);
+  const results = useEditorTabsStore((s) => s.results);
+  const addTab = useEditorTabsStore((s) => s.addTab);
+  const updateTab = useEditorTabsStore((s) => s.updateTab);
+  const hydrated = useEditorTabsStore((s) => s.hydrated);
 
-export default function Workspace() {
-  const { theme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  const monaco = useMonaco()
-  
-  const [query, setQuery] = useState("SELECT 1 AS test_col;")
-  const [warehouseId, setWarehouseId] = useState("default")
-  const [warehouses, setWarehouses] = useState<string[]>([])
-  
-  const [isRunning, setIsRunning] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [catalogs, setCatalogs] = useState<any[]>([])
-  const [history, setHistory] = useState<{query: string, time: string, status: string, duration?: string}[]>([])
-  const [activeTab, setActiveTab] = useState("results")
-  
+  const { run, cancel } = useQueryExecution();
+  const [ddlTable, setDdlTable] = useState<TableModel | null>(null);
+
+  // The editor always needs one tab to write into. Gated on `hydrated`, because
+  // zustand reads localStorage after the first render — without the gate every
+  // reload adds an empty tab beside the restored ones.
   useEffect(() => {
-    setMounted(true)
-    // Fetch warehouses
-    getWarehouses().then(wh => {
-      setWarehouses(wh)
-      if (wh.length > 0) setWarehouseId(wh[0])
-    }).catch(console.error)
-  }, [])
+    if (hydrated && tabs.length === 0) addTab();
+  }, [hydrated, tabs.length, addTab]);
 
-  useEffect(() => {
-    // Load history from local storage
-    try {
-      const stored = localStorage.getItem("minilake_history")
-      if (stored) setHistory(JSON.parse(stored))
-    } catch(e) {}
-  }, [])
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const activeResult = activeTab ? results[activeTab.id] : undefined;
+  const isRunning = activeResult?.status === "running";
 
-  const saveHistory = (item: any) => {
-    const newHistory = [item, ...history].slice(0, 50)
-    setHistory(newHistory)
-    try {
-      localStorage.setItem("minilake_history", JSON.stringify(newHistory))
-    } catch(e) {}
+  if (!activeTab) {
+    return (
+      <WorkspaceShell title="Query editor">
+        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+      </WorkspaceShell>
+    );
   }
 
-  const appendTableToQuery = (catalog: string, schema: string, table: string) => {
-    const tableRef = `\`${catalog}\`.\`${schema}\`.\`${table}\``
-    setQuery(prev => {
-      if (prev.trim() === "SELECT 1 AS test_col;") {
-        return `SELECT * FROM ${tableRef} LIMIT 10;`
-      }
-      return prev + ` ${tableRef}`
-    })
+  function runSql(sql: string) {
+    void run(activeTab.id, sql);
   }
 
-  const runQuery = async () => {
-    if (!query.trim()) return
-    
-    setIsRunning(true)
-    setError(null)
-    setResult(null)
-    setActiveTab("results")
-    
-    const startTime = Date.now()
-    try {
-      const response = await executeSql(query, warehouseId)
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2) + "s"
-      
-      setResult(response)
-      
-      const status = response.status?.state || "SUCCESS"
-      setHistory(prev => [{
-        query,
-        time: new Date().toLocaleTimeString(),
-        status: status,
-        duration
-      }, ...prev].slice(0, 50))
-    } catch (err: any) {
-      setError(err.message)
-      setHistory(prev => [{
-        query,
-        time: new Date().toLocaleTimeString(),
-        status: "ERROR",
-        duration: ((Date.now() - startTime) / 1000).toFixed(2) + "s"
-      }, ...prev].slice(0, 50))
-    } finally {
-      setIsRunning(false)
-    }
+  function openInNewTab(title: string, sql: string, execute = false) {
+    const id = addTab({ title, sql });
+    if (execute) void run(id, sql);
   }
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Top Navbar */}
-      <header className="flex h-14 items-center justify-between border-b px-4">
-        <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-primary" />
-          <h1 className="font-semibold">Minilake Workspace</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <select 
-            value={warehouseId} 
-            onChange={e => setWarehouseId(e.target.value)}
-            className="text-sm bg-transparent border rounded p-1"
-          >
-            {warehouses.map(w => (
-              <option key={w} value={w}>{w}</option>
-            ))}
-          </select>
-          <DropdownMenu>
-            {/* @ts-ignore */}
-            <DropdownMenuTrigger className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent hover:text-accent-foreground h-9 w-9">
-              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Toggle theme</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setTheme("light")}>
-                Light
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("dark")}>
-                Dark
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setTheme("system")}>
-                System
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
-
-      {/* @ts-ignore */}
-      <ResizablePanelGroup direction="horizontal" className="flex-1">
-        {/* Left Sidebar - Explorer */}
-        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="flex flex-col bg-muted/30">
-          <div className="p-3 border-b border-border flex items-center justify-between font-medium text-sm">
-            Database Explorer
-          </div>
-          <ScrollArea className="flex-1">
-            <div className="p-2">
-              <DatabaseExplorer onSelectTable={appendTableToQuery} />
-            </div>
-          </ScrollArea>
+    <WorkspaceShell title="Query editor">
+      {/* v4 renamed `direction` to `orientation`, and a bare number is pixels, not
+          percent — sizes must be percentage strings. */}
+      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+        <ResizablePanel defaultSize="20%" minSize="12%" maxSize="40%" className="min-w-0">
+          <CatalogTree
+            onPreviewTable={(table) =>
+              openInNewTab(
+                `Preview ${table.name}`,
+                previewStatement(table.catalog_name, table.schema_name, table.name),
+                true,
+              )
+            }
+            onInsertTable={(table) => {
+              const reference = tableRef(table.catalog_name, table.schema_name, table.name);
+              updateTab(activeTab.id, {
+                sql: `${activeTab.sql}${activeTab.sql.endsWith(" ") || !activeTab.sql ? "" : " "}${reference}`,
+                dirty: true,
+              });
+              toast.success(`Inserted ${reference}`);
+            }}
+            onGenerateDdl={(table) => setDdlTable(table)}
+          />
         </ResizablePanel>
-        
+
         <ResizableHandle withHandle />
-        
-        {/* Right Main Area */}
-        <ResizablePanel defaultSize={80} className="flex flex-col">
-          {/* @ts-ignore */}
-          <ResizablePanelGroup direction="vertical">
-            {/* Top - Editor */}
-            <ResizablePanel defaultSize={50} minSize={20} className="flex flex-col border-b">
-              <div className="flex items-center justify-between p-2 border-b bg-muted/20">
-                <div className="flex items-center gap-2">
-                  <Button 
-                    size="sm" 
-                    onClick={runQuery} 
-                    disabled={isRunning}
-                    className="gap-2"
-                  >
-                    {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                    Run
-                  </Button>
-                </div>
-              </div>
-              <div className="flex-1 relative">
-                <Editor
-                  height="100%"
-                  language="sql"
-                  theme={mounted && theme === "dark" ? "vs-dark" : "light"}
-                  value={query}
-                  onChange={(val) => setQuery(val || "")}
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    wordWrap: "on",
-                    padding: { top: 10 }
-                  }}
+
+        <ResizablePanel defaultSize="80%" className="min-w-0">
+          <ResizablePanelGroup orientation="vertical">
+            <ResizablePanel defaultSize="50%" minSize="20%" className="flex min-h-0 flex-col">
+              <QueryTabs />
+              <EditorToolbar
+                tab={activeTab}
+                isRunning={isRunning}
+                onRun={() => runSql(activeTab.sql)}
+                onCancel={() => cancel(activeTab.id)}
+                onExplain={() => runSql(`EXPLAIN ${activeTab.sql.trim().replace(/;\s*$/, "")}`)}
+              />
+              <div className="min-h-0 flex-1">
+                <SqlEditor
+                  value={activeTab.sql}
+                  onChange={(sql) => updateTab(activeTab.id, { sql, dirty: true })}
+                  onRun={runSql}
                 />
               </div>
             </ResizablePanel>
-            
+
             <ResizableHandle withHandle />
-            
-            {/* Bottom - Results */}
-            <ResizablePanel defaultSize={50} minSize={20}>
-              <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-                <div className="border-b px-4">
-                  <TabsList className="h-10 bg-transparent">
-                    <TabsTrigger value="results" className="data-[state=active]:bg-muted data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-primary rounded-none">
-                      Results
-                    </TabsTrigger>
-                    <TabsTrigger value="history" className="data-[state=active]:bg-muted data-[state=active]:shadow-none border-b-2 border-transparent data-[state=active]:border-primary rounded-none">
-                      History
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-                
-                <TabsContent value="results" className="flex-1 m-0 overflow-hidden">
-                  {isRunning ? (
-                    <div className="flex h-full items-center justify-center">
-                      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    </div>
-                  ) : error ? (
-                    <div className="p-4 text-red-500 bg-red-500/10 h-full overflow-auto font-mono text-sm">
-                      {error}
-                    </div>
-                  ) : result?.result?.columns ? (
-                    <ScrollArea className="h-full">
-                      <Table>
-                        <TableHeader className="bg-muted/50 sticky top-0">
-                          <TableRow>
-                            {result.result.columns.map((col: any, i: number) => (
-                              <TableHead key={i} className="font-semibold whitespace-nowrap">
-                                {col.name}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {result.result.data_array?.map((row: any[], i: number) => (
-                            <TableRow key={i}>
-                              {row.map((cell: any, j: number) => (
-                                <TableCell key={j} className="whitespace-nowrap font-mono text-sm">
-                                  {cell === null ? <span className="text-muted-foreground italic">null</span> : String(cell)}
-                                </TableCell>
-                              ))}
-                            </TableRow>
-                          ))}
-                          {!result.result.data_array?.length && (
-                            <TableRow>
-                              <TableCell colSpan={result.result.columns.length} className="text-center py-8 text-muted-foreground">
-                                No rows returned.
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-muted-foreground">
-                      Run a query to see results.
-                    </div>
-                  )}
-                </TabsContent>
-                
-                <TabsContent value="history" className="flex-1 m-0 overflow-hidden">
-                   <ScrollArea className="h-full">
-                    <Table>
-                      <TableHeader className="bg-muted/50 sticky top-0">
-                        <TableRow>
-                          <TableHead>Time</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Query</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {history.length === 0 ? (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                              No query history yet.
-                            </TableCell>
-                          </TableRow>
-                        ) : (
-                          history.map((item, i) => (
-                            <TableRow key={i}>
-                              <TableCell className="whitespace-nowrap">{item.time}</TableCell>
-                              <TableCell>
-                                <span className={`px-2 py-1 rounded text-xs ${(item.status === 'SUCCEEDED' || item.status === 'FINISHED') ? 'bg-emerald-500/10 text-emerald-500' : 'bg-destructive/10 text-destructive'}`}>
-                                  {item.status}
-                                </span>
-                              </TableCell>
-                              <TableCell>{item.duration || "-"}</TableCell>
-                              <TableCell className="font-mono text-xs max-w-[300px] truncate">{item.query}</TableCell>
-                            </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                </TabsContent>
-              </Tabs>
+
+            <ResizablePanel defaultSize="50%" minSize="15%" className="min-h-0">
+              <ResultsPanel result={activeResult} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
       </ResizablePanelGroup>
-    </div>
-  )
+
+      <DdlDialog table={ddlTable} onOpenChange={(open) => !open && setDdlTable(null)} />
+    </WorkspaceShell>
+  );
 }

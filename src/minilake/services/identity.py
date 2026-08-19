@@ -9,6 +9,13 @@ router = APIRouter(prefix="/api/2.0", tags=["identity"])
 # Fake organization ID returned in response headers
 FAKE_ORG_ID = "12345678901234567"
 
+# The single identity every request is attributed to. Exported because other services
+# (query history, saved queries) have to name an owner, and they must name the same one
+# the SCIM endpoint reports or clients see two different users on one workspace.
+USER_ID = "minilake-user-1"
+USER_NAME = "minilake-user"
+DISPLAY_NAME = "MiniLake Test User"
+
 
 @router.get("/preview/scim/v2/Me", response_model=MeResponse)
 async def get_current_user(response: Response) -> MeResponse:
@@ -19,9 +26,9 @@ async def get_current_user(response: Response) -> MeResponse:
     """
     response.headers["x-databricks-org-id"] = FAKE_ORG_ID
     return MeResponse(
-        id="minilake-user-1",
-        userName="minilake-user",
-        displayName="MiniLake Test User",
+        id=USER_ID,
+        userName=USER_NAME,
+        displayName=DISPLAY_NAME,
         active=True,
         emails=[{"value": "test@minilake.local", "type": "work"}],
     )

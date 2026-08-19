@@ -22,3 +22,13 @@ Thumbs.db
 docs/
 examples/
 CONTRIBUTING.md
+# Frontend build artifacts. `COPY ui/ ./` in the frontend-builder stage would
+# otherwise drop the host's node_modules over the ones just installed in the
+# image — a different platform's binaries, and a much larger build context.
+ui/node_modules/
+ui/.next/
+ui/out/
+# Monaco is copied in from node_modules by the ui build itself.
+ui/public/monaco/
+# Staged by the ui build on the host; the image copies it from frontend-builder.
+src/minilake/ui_static/

@@ -10,18 +10,26 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 
 from minilake.app import get_duckdb_pool
 from minilake.config import settings
 from minilake.errors import DatabricksError
 from minilake.models.sql import (
+    ChunkInfo,
     ColumnInfo,
     ExecuteStatementRequest,
     ExecuteStatementResponse,
     ExternalLink,
     GetStatementResponse,
+    ListQueriesResponse,
+    QueryInfo,
+    QueryMetrics,
+    QueryStatus,
     ResultData,
+    ResultManifest,
+    ResultSchema,
+    ServiceError,
     StatementState,
     StatementStatus,
 )
@@ -55,10 +63,86 @@ _UPDATE_RE = re.compile(
 
 router = APIRouter(prefix="/api/2.0/sql", tags=["sql_statements"])
 
-# In-memory statement results cache (keyed by statement_id)
+# In-memory statement results cache (keyed by statement_id). Insertion-ordered, which
+# is what makes both the FIFO eviction below and the newest-first history listing work
+# without a separate index.
 _state: Dict[str, Any] = {
     "statements": {},
 }
+
+# `SUCCEEDED` in the Statement Execution API is `FINISHED` in query history. The two
+# vocabularies are genuinely different in real Databricks, so the mapping is explicit
+# rather than a passthrough.
+_QUERY_STATUS_BY_STATE = {
+    StatementState.PENDING.value: QueryStatus.QUEUED,
+    StatementState.RUNNING.value: QueryStatus.RUNNING,
+    StatementState.SUCCEEDED.value: QueryStatus.FINISHED,
+    StatementState.FAILED.value: QueryStatus.FAILED,
+    StatementState.CANCELED.value: QueryStatus.CANCELED,
+    StatementState.CLOSED.value: QueryStatus.FINISHED,
+}
+
+
+def _record_statement(entry: Dict[str, Any]) -> None:
+    """Store an executed statement, evicting the oldest once over the cap.
+
+    Rows go first and metadata second: a statement whose rows were dropped can no
+    longer serve `/result`, but it still belongs in query history, which is the far
+    cheaper thing to keep.
+    """
+    statements: Dict[str, Any] = _state["statements"]
+    statements[entry["id"]] = entry
+
+    limit = max(1, settings.statement_cache_size)
+    if len(statements) <= limit:
+        return
+
+    for statement_id in list(statements.keys()):
+        if len(statements) <= limit:
+            break
+        stale = statements[statement_id]
+        if stale.get("raw_rows") or stale.get("result"):
+            stale["raw_rows"] = []
+            stale["result"] = None
+            stale["rows_evicted"] = True
+        else:
+            del statements[statement_id]
+
+    # Everything left is already metadata-only; drop oldest-first until under the cap.
+    while len(statements) > limit:
+        del statements[next(iter(statements))]
+
+
+def _record_failure(
+    statement_id: str,
+    req: ExecuteStatementRequest,
+    disposition: str,
+    fmt: str,
+    started_ms: int,
+    error_code: Optional[str],
+    message: Optional[str],
+) -> None:
+    """Record a statement that raised, so it shows up in query history as FAILED."""
+    _record_statement(
+        {
+            "id": statement_id,
+            "sql": req.statement,
+            "warehouse_id": req.warehouse_id,
+            "status": StatementState.FAILED.value,
+            "result": None,
+            "raw_columns": [],
+            "raw_column_types": [],
+            "raw_rows": [],
+            "row_count": 0,
+            "disposition": disposition,
+            "format": fmt,
+            "error_code": error_code,
+            "error_message": message,
+            "created_at": started_ms,
+            "started_at": started_ms,
+            "ended_at": int(time.time() * 1000),
+        }
+    )
 
 
 def _format_value(val: Any) -> Any:
@@ -511,6 +595,21 @@ async def _execute_sql_real(
 ) -> tuple[List[str], List[List[Any]]]:
     """Execute SQL against DuckDB and return (column_names, rows).
 
+    Kept as a two-tuple wrapper around `_execute_sql_real_typed` because
+    `services/jobs.py` calls it and has no use for the types.
+    """
+    columns, _types, rows = await _execute_sql_real_typed(warehouse_id, sql, catalog, schema_name)
+    return columns, rows
+
+
+async def _execute_sql_real_typed(
+    warehouse_id: str,
+    sql: str,
+    catalog: Optional[str] = None,
+    schema_name: Optional[str] = None,
+) -> tuple[List[str], List[Optional[str]], List[List[Any]]]:
+    """Execute SQL against DuckDB and return (column_names, column_types, rows).
+
     Uses UC connection (shared) instead of warehouse-specific connection,
     so that Unity Catalog tables are accessible to all warehouses.
     """
@@ -518,14 +617,16 @@ async def _execute_sql_real(
 
     create_external = _classify_create_external(sql)
     if create_external is not None:
-        return await _register_external_delta(*create_external)
+        columns, rows = await _register_external_delta(*create_external)
+        return columns, [None] * len(columns), rows
 
     sql = _strip_databricks_ddl_clauses(sql)
 
     delta_write = _classify_delta_write(sql)
     if delta_write is not None:
         kind, storage_location, match = delta_write
-        return await _execute_delta_write(kind, storage_location, match)
+        columns, rows = await _execute_delta_write(kind, storage_location, match)
+        return columns, [None] * len(columns), rows
 
     pool = get_duckdb_pool()
     if not pool:
@@ -560,15 +661,19 @@ async def _execute_sql_real(
             logger.debug(f"Executing SQL on warehouse {warehouse_id}: {sql}")
             result = conn.execute(sql)
 
-            # Fetch results
-            columns = [desc[0] for desc in result.description] if result.description else []
+            # Fetch results. DuckDB's cursor description carries the declared type in
+            # desc[1] — the only place a result column's type is available, since an
+            # expression like `count(*)` has no Unity Catalog column behind it.
+            description = result.description or []
+            columns = [desc[0] for desc in description]
+            column_types = [str(desc[1]) if desc[1] is not None else None for desc in description]
             rows = result.fetchall()
 
             # Format rows for JSON
             formatted_rows = [[_format_value(cell) for cell in row] for row in rows]
 
             logger.debug(f"SQL execution returned {len(rows)} rows")
-            return columns, formatted_rows
+            return columns, column_types, formatted_rows
 
         except Exception as e:
             logger.error(f"SQL execution failed: {e}")
@@ -604,6 +709,43 @@ def _serialize_chunk(columns: List[str], rows: List[List[Any]], fmt: str) -> tup
     return json.dumps(rows).encode("utf-8"), "application/json"
 
 
+def _column_infos(columns: List[str], column_types: Optional[List[Optional[str]]] = None) -> List[ColumnInfo]:
+    """Build the `ColumnInfo` list for a result set, tolerating a missing type list
+    (statements restored from an older snapshot, and the DDL paths that return no
+    columns at all)."""
+    types = column_types or []
+    return [
+        ColumnInfo(
+            name=name,
+            type_text=types[i] if i < len(types) else None,
+            type_name=types[i] if i < len(types) else None,
+            position=i,
+        )
+        for i, name in enumerate(columns)
+    ]
+
+
+def _build_manifest(
+    columns: List[str],
+    rows: List[List[Any]],
+    fmt: str,
+    column_types: Optional[List[Optional[str]]] = None,
+) -> ResultManifest:
+    """Describe a result set's schema and chunking, the way the real API does."""
+    chunks = [rows[i : i + _CHUNK_SIZE] for i in range(0, len(rows), _CHUNK_SIZE)] or [[]]
+    infos = _column_infos(columns, column_types)
+    return ResultManifest(
+        format=fmt,
+        schema=ResultSchema(column_count=len(infos), columns=infos),
+        total_chunk_count=len(chunks),
+        total_row_count=len(rows),
+        truncated=False,
+        chunks=[
+            ChunkInfo(chunk_index=i, row_offset=i * _CHUNK_SIZE, row_count=len(chunk)) for i, chunk in enumerate(chunks)
+        ],
+    )
+
+
 def _build_result_data(
     request: Request,
     statement_id: str,
@@ -611,6 +753,7 @@ def _build_result_data(
     rows: List[List[Any]],
     disposition: str,
     fmt: str,
+    column_types: Optional[List[Optional[str]]] = None,
 ) -> ResultData:
     """Build the ResultData for a statement's first chunk, real INLINE data or
     real self-hosted EXTERNAL_LINKS depending on `disposition`."""
@@ -632,14 +775,14 @@ def _build_result_data(
             ),
         )
         return ResultData(
-            columns=[ColumnInfo(name=c) for c in columns],
+            columns=_column_infos(columns, column_types),
             external_links=[link],
             row_count=len(rows),
             truncated=False,
         )
 
     return ResultData(
-        columns=[ColumnInfo(name=c) for c in columns],
+        columns=_column_infos(columns, column_types),
         data_array=rows,
         row_count=len(rows),
         truncated=False,
@@ -690,51 +833,64 @@ async def execute_statement(req: ExecuteStatementRequest, request: Request) -> E
 
     # Execute SQL synchronously (MVP approach: no background jobs)
     try:
-        columns, rows = await _execute_sql_real(
+        columns, column_types, rows = await _execute_sql_real_typed(
             req.warehouse_id,
             req.statement,
             req.catalog,
             req.schema_name,
         )
 
-        result_data = _build_result_data(request, statement_id, columns, rows, disposition, fmt)
+        result_data = _build_result_data(request, statement_id, columns, rows, disposition, fmt, column_types)
+        manifest = _build_manifest(columns, rows, fmt, column_types)
 
         # Store the raw rows/columns too (not just the first chunk's rendering)
         # so later /result/chunks/{n} and /result/chunks/{n}/data requests can
         # serve any chunk, in any of the formats real Databricks supports.
-        _state["statements"][statement_id] = {
-            "id": statement_id,
-            "sql": req.statement,
-            "warehouse_id": req.warehouse_id,
-            "status": StatementState.SUCCEEDED.value,
-            "result": result_data.model_dump(),
-            "raw_columns": columns,
-            "raw_rows": rows,
-            "disposition": disposition,
-            "format": fmt,
-            "created_at": now_ms,
-            "started_at": now_ms,
-            "ended_at": int(time.time() * 1000),
-        }
+        _record_statement(
+            {
+                "id": statement_id,
+                "sql": req.statement,
+                "warehouse_id": req.warehouse_id,
+                "status": StatementState.SUCCEEDED.value,
+                "result": result_data.model_dump(),
+                "manifest": manifest.model_dump(by_alias=True),
+                "raw_columns": columns,
+                "raw_column_types": column_types,
+                "raw_rows": rows,
+                "row_count": len(rows),
+                "disposition": disposition,
+                "format": fmt,
+                "created_at": now_ms,
+                "started_at": now_ms,
+                "ended_at": int(time.time() * 1000),
+            }
+        )
 
         logger.info(f"Statement {statement_id} executed successfully")
 
         return ExecuteStatementResponse(
             statement_id=statement_id,
             status=StatementStatus(state=StatementState.SUCCEEDED),
+            manifest=manifest,
             result=result_data,
             created_at=now_ms,
             started_at=now_ms,
             ended_at=int(time.time() * 1000),
         )
 
-    except DatabricksError:
+    # A failed statement is still a statement that ran: record it before re-raising,
+    # or query history would only ever show the queries that worked — which is the
+    # opposite of what anyone opens a history panel to find.
+    except DatabricksError as e:
+        _record_failure(statement_id, req, disposition, fmt, now_ms, e.error_code, e.message)
         raise
     except Exception as e:
         logger.error(f"Failed to execute statement: {e}")
+        message = f"Failed to execute statement: {str(e)}"
+        _record_failure(statement_id, req, disposition, fmt, now_ms, "INTERNAL_ERROR", message)
         raise DatabricksError(
             error_code="INTERNAL_ERROR",
-            message=f"Failed to execute statement: {str(e)}",
+            message=message,
             status_code=500,
         )
 
@@ -767,9 +923,23 @@ async def get_statement(statement_id: str) -> GetStatementResponse:
             truncated=result_dict.get("truncated", False),
         )
 
+    # Rebuild rather than trusting the stored copy: statements restored from a
+    # snapshot written before manifests existed have none.
+    manifest = _build_manifest(
+        stmt.get("raw_columns", []),
+        stmt.get("raw_rows", []),
+        stmt.get("format", "JSON_ARRAY"),
+        stmt.get("raw_column_types"),
+    )
+
+    error = stmt.get("error_message")
     return GetStatementResponse(
         statement_id=statement_id,
-        status=StatementStatus(state=StatementState(stmt.get("status", "SUCCEEDED"))),
+        status=StatementStatus(
+            state=StatementState(stmt.get("status", "SUCCEEDED")),
+            error=ServiceError(error_code=stmt.get("error_code"), message=error) if error else None,
+        ),
+        manifest=manifest,
         result=result,
         created_at=stmt.get("created_at"),
         started_at=stmt.get("started_at"),
@@ -818,7 +988,7 @@ async def get_result_chunk(statement_id: str, chunk_index: int, request: Request
         return ResultData(external_links=[link], row_count=len(chunk_rows))
 
     return ResultData(
-        columns=[ColumnInfo(name=c) for c in columns],
+        columns=_column_infos(columns, stmt.get("raw_column_types")),
         data_array=chunk_rows,
         row_count=len(chunk_rows),
     )
@@ -860,8 +1030,189 @@ async def cancel_statement(statement_id: str) -> dict[str, str]:
         )
 
     logger.info(f"Canceling statement {statement_id}")
-    _state["statements"][statement_id]["status"] = "CANCELED"
+    stmt = _state["statements"][statement_id]
+    stmt["status"] = StatementState.CANCELED.value
+    stmt["ended_at"] = int(time.time() * 1000)
     return {"message": f"Statement '{statement_id}' canceled"}
+
+
+# ============================================================================
+# Query History (`GET /api/2.0/sql/history/queries`)
+#
+# Backed by the statement cache above rather than a second store: every execution
+# already lands there, including the failures, so a parallel history table would
+# only be a way for the two to disagree.
+# ============================================================================
+
+_STATEMENT_TYPE_RE = re.compile(r"^\s*(?:WITH\b.*?\)\s*)?(\w+)", re.IGNORECASE | re.DOTALL)
+
+
+def _statement_type(sql: str) -> Optional[str]:
+    """Classify a statement by its leading keyword, the way query history reports it."""
+    match = _STATEMENT_TYPE_RE.match(sql or "")
+    return match.group(1).upper() if match else None
+
+
+def _query_info(stmt: Dict[str, Any], include_metrics: bool) -> QueryInfo:
+    """Render one cached statement as a query history entry."""
+    from minilake.services import identity
+
+    started = stmt.get("started_at") or stmt.get("created_at")
+    ended = stmt.get("ended_at")
+    duration = (ended - started) if (started is not None and ended is not None) else None
+    rows_produced = stmt.get("row_count")
+    status = _QUERY_STATUS_BY_STATE.get(stmt.get("status", ""), QueryStatus.FINISHED)
+
+    metrics = None
+    if include_metrics:
+        metrics = QueryMetrics(
+            total_time_ms=duration,
+            execution_time_ms=duration,
+            rows_produced_count=rows_produced,
+            read_bytes=0,
+        )
+
+    return QueryInfo(
+        query_id=stmt.get("id"),
+        query_text=stmt.get("sql"),
+        status=status,
+        statement_type=_statement_type(stmt.get("sql", "")),
+        warehouse_id=stmt.get("warehouse_id"),
+        endpoint_id=stmt.get("warehouse_id"),
+        duration=duration,
+        rows_produced=rows_produced,
+        query_start_time_ms=started,
+        query_end_time_ms=ended,
+        execution_end_time_ms=ended,
+        # Execution is synchronous, so a statement is terminal by the time it is
+        # recorded — there is no non-final state a client could poll for.
+        is_final=True,
+        user_name=identity.USER_NAME,
+        executed_as_user_name=identity.USER_NAME,
+        error_message=stmt.get("error_message"),
+        metrics=metrics,
+    )
+
+
+def _parse_filter_by(params) -> Dict[str, Any]:
+    """Read a QueryFilter out of the query string.
+
+    The SDK flattens nested query objects into dotted, repeatable parameters
+    (`filter_by.statuses=FAILED&filter_by.warehouse_ids=abc`) rather than JSON —
+    see `_BaseClient._fix_query_string`, which implements the Google HttpRule
+    convention. A JSON-encoded `filter_by=` is also accepted, because it is the
+    obvious thing to reach for by hand and costs one branch to support.
+    """
+    raw_json = params.get("filter_by")
+    if raw_json:
+        try:
+            parsed = json.loads(raw_json)
+        except (TypeError, ValueError):
+            parsed = None
+        if not isinstance(parsed, dict):
+            raise DatabricksError(
+                error_code="INVALID_PARAMETER_VALUE",
+                message="filter_by must be a JSON object, or use the filter_by.<field> form",
+                status_code=400,
+            )
+        return parsed
+
+    filters: Dict[str, Any] = {}
+    for field in ("statuses", "warehouse_ids", "statement_ids", "user_ids"):
+        values = params.getlist(f"filter_by.{field}")
+        if values:
+            filters[field] = values
+
+    time_range = {}
+    for bound in ("start_time_ms", "end_time_ms"):
+        value = params.get(f"filter_by.query_start_time_range.{bound}")
+        if value is not None:
+            try:
+                time_range[bound] = int(value)
+            except ValueError:
+                raise DatabricksError(
+                    error_code="INVALID_PARAMETER_VALUE",
+                    message=f"filter_by.query_start_time_range.{bound} must be an integer",
+                    status_code=400,
+                )
+    if time_range:
+        filters["query_start_time_range"] = time_range
+
+    return filters
+
+
+def _matches_filter(info: QueryInfo, filters: Dict[str, Any]) -> bool:
+    statuses = filters.get("statuses")
+    if statuses and (info.status.value if info.status else None) not in statuses:
+        return False
+
+    warehouse_ids = filters.get("warehouse_ids")
+    if warehouse_ids and info.warehouse_id not in warehouse_ids:
+        return False
+
+    statement_ids = filters.get("statement_ids")
+    if statement_ids and info.query_id not in statement_ids:
+        return False
+
+    time_range = filters.get("query_start_time_range") or {}
+    start_ms = time_range.get("start_time_ms")
+    end_ms = time_range.get("end_time_ms")
+    started = info.query_start_time_ms
+    if start_ms is not None and (started is None or started < start_ms):
+        return False
+    if end_ms is not None and (started is None or started > end_ms):
+        return False
+
+    return True
+
+
+@router.get("/history/queries", response_model=ListQueriesResponse)
+async def list_query_history(
+    request: Request,
+    max_results: Optional[int] = Query(None),
+    page_token: Optional[str] = Query(None),
+    include_metrics: bool = Query(False),
+) -> ListQueriesResponse:
+    """List executed queries, newest first."""
+    # Read the filter off the raw query params: its fields arrive as dotted,
+    # repeatable keys that cannot be declared as function arguments.
+    filters = _parse_filter_by(request.query_params)
+
+    entries = []
+    for stmt in _state["statements"].values():
+        info = _query_info(stmt, include_metrics)
+        if _matches_filter(info, filters):
+            entries.append(info)
+    entries.reverse()  # insertion order is oldest-first; history reads newest-first
+
+    limit = max_results if max_results is not None else 100
+    if limit < 1 or limit > 1000:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message="max_results must be between 1 and 1000",
+            status_code=400,
+        )
+
+    # The page token is just an offset. Real Databricks returns an opaque cursor;
+    # nothing in the SDK inspects it, and an offset stays correct here because the
+    # list is regenerated per request from an append-only cache.
+    try:
+        offset = int(page_token) if page_token else 0
+    except ValueError:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=f"Invalid page_token '{page_token}'",
+            status_code=400,
+        )
+
+    page = entries[offset : offset + limit]
+    has_next = offset + limit < len(entries)
+
+    return ListQueriesResponse(
+        res=page,
+        next_page_token=str(offset + limit) if has_next else None,
+        has_next_page=has_next,
+    )
 
 
 # ============================================================================

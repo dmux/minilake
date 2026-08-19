@@ -79,6 +79,25 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Categorical series palette for result charts.
+   *
+   * Separate from --chart-*, which base-nova defines as a grayscale ramp: fine
+   * for a sequential magnitude ramp, useless for telling series apart. These
+   * eight hues are assigned in fixed order and never cycled; past eight, the
+   * chart caps rather than generating a ninth hue that no colorblind reader
+   * could separate from an existing one. Both modes are validated as a set
+   * (adjacent-pair CVD and normal-vision separation, lightness band, chroma
+   * floor, contrast) — three light steps sit under 3:1 on this surface, which
+   * is why the chart always ships a legend and the Results table beside it. */
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-series-3: #1baf7a;
+  --viz-series-4: #eda100;
+  --viz-series-5: #e87ba4;
+  --viz-series-6: #008300;
+  --viz-series-7: #4a3aa7;
+  --viz-series-8: #e34948;
 }
 
 .dark {
@@ -113,6 +132,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+
+  /* The same eight hues, re-stepped for the dark surface — not an automatic
+   * flip of the light values, which would fall out of the dark lightness band. */
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-series-4: #c98500;
+  --viz-series-5: #d55181;
+  --viz-series-6: #008300;
+  --viz-series-7: #9085e9;
+  --viz-series-8: #e66767;
 }
 
 @layer base {

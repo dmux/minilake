@@ -69,3 +69,9 @@ Thumbs.db
 # Claude Code local settings (machine-specific; .claude/CLAUDE.md IS tracked)
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Built web UI, staged into the package by `cd ui && pnpm build` (see docs/ui.md)
+src/minilake/ui_static/
+
+# Local agent tooling, alongside .claude/ and .mcp.json — not project configuration
+.agents/
