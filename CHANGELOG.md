@@ -8,6 +8,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.1] — 2026-08-18
+
+Packaging fix. No runtime changes: the 1.7.0 wheel on PyPI is complete and correct,
+but its sdist was rejected and never published, so 1.7.0 has no source distribution.
+
+### Fixed
+
+- **The sdist carried `ui/node_modules`.** hatchling honours only the root
+  `.gitignore`, so everything `ui/.gitignore` covers is invisible to it — and the
+  release workflow runs `pnpm install` before `uv build`. The sdist came to 350 MB
+  against PyPI's 100 MB per-file limit, and was rejected *after* the wheel had
+  already been uploaded. Now 7.0 MB.
+- **The sdist dropped the web UI**, and with it the wheel. `uv build` builds the
+  sdist first and then builds the wheel *from that sdist*, but the `artifacts`
+  override rescuing the gitignored `ui_static` export was declared only on the wheel
+  target. Nothing failed when this happened — the wheel simply installed with no
+  `/ui`. `uv build --wheel` hid it by building straight from the source tree.
+
+### Added
+
+- Two release-workflow guards, both running before anything is uploaded: one fails
+  the publish if the wheel arrives without the web UI, the other if the sdist exceeds
+  PyPI's size limit. A PyPI upload cannot be replaced, so these have to catch it
+  first.
+
 ## [1.7.0] — 2026-08-18
 
 The release that gives minilake a face: an embedded web workspace, and a real
@@ -109,5 +134,6 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.1]: https://github.com/dmux/minilake/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dmux/minilake/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dmux/minilake/releases/tag/v1.6.0
