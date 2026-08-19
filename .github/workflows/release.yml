@@ -141,6 +141,21 @@ jobs:
           fi
           echo "Web UI present: $count files."
 
+      # PyPI rejects any file over 100 MB, and it does so *after* the wheel has
+      # already been uploaded — leaving a half-published release that cannot be
+      # replaced. The sdist is the one that grows: hatchling honours only the root
+      # .gitignore, so anything ui/.gitignore covers (node_modules above all) has to
+      # be excluded explicitly in pyproject.toml.
+      - name: Verify the sdist is within PyPI's size limit
+        run: |
+          bytes=$(stat -c%s dist/*.tar.gz)
+          mb=$((bytes / 1024 / 1024))
+          if [ "$mb" -ge 95 ]; then
+            echo "::error::The sdist is ${mb} MB; PyPI's limit is 100 MB. Check what leaked into it: tar tzf dist/*.tar.gz | awk -F/ '{print \$2\"/\"\$3}' | sort | uniq -c | sort -rn | head"
+            exit 1
+          fi
+          echo "sdist is ${mb} MB."
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 

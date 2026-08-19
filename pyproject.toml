@@ -116,6 +116,15 @@ exclude = [
     "/htmlcov",
     "/data",
     "/scratchpad",
+    # hatchling only honours the *root* .gitignore, so everything ui/.gitignore
+    # covers has to be repeated here. Without this the sdist carries ui/node_modules
+    # — 44k files, 300+ MB — because the release workflow runs `pnpm install` before
+    # `uv build`. PyPI rejects anything over 100 MB, and the failure lands after the
+    # wheel has already been uploaded.
+    "/ui/node_modules",
+    "/ui/.next",
+    "/ui/out",
+    "/ui/public/monaco",
 ]
 
 [tool.pytest.ini_options]
