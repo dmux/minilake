@@ -4,18 +4,22 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+# Anchored to the repo root on purpose. Unanchored, `lib/` also matches
+# `ui/src/lib/`, which silently kept the web UI's entire API client and helpers
+# out of git — the build then worked locally, from files on disk, and failed in
+# CI from a clean checkout. The same trap applies to `build/`, `dist/` and `var/`.
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 *.egg-info/
 .installed.cfg
 *.egg
