@@ -124,6 +124,23 @@ jobs:
       - name: Check package metadata
         run: uvx twine check dist/*
 
+      # A wheel with no web UI installs and runs fine — it just silently has no /ui,
+      # and a PyPI upload cannot be replaced. The failure is easy to reintroduce:
+      # `uv build` goes through the sdist, so the export has to survive *both* build
+      # targets, not just the wheel.
+      - name: Verify the wheel carries the web UI
+        run: |
+          count=$(python -c "
+          import glob, zipfile
+          names = zipfile.ZipFile(sorted(glob.glob('dist/*.whl'))[-1]).namelist()
+          print(sum(1 for n in names if 'minilake/ui_static/' in n))
+          ")
+          if [ "$count" -lt 10 ]; then
+            echo "::error::The wheel contains $count ui_static files. The web UI was dropped during packaging."
+            exit 1
+          fi
+          echo "Web UI present: $count files."
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 

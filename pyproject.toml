@@ -100,6 +100,12 @@ packages = ["src/minilake"]
 artifacts = ["src/minilake/ui_static/**"]
 
 [tool.hatch.build.targets.sdist]
+# Same override as the wheel, and for a sharper reason: `uv build` (what the release
+# workflow runs) builds the sdist first and then builds the wheel *from that sdist*.
+# Without this the export is dropped at the sdist step and the published wheel has no
+# web UI at all — silently, since nothing fails. `uv build --wheel` hides the bug by
+# going straight from the source tree.
+artifacts = ["src/minilake/ui_static/**"]
 # The sdist is what someone builds from, so it carries the source, the docs and the
 # compose files. Agent config and local tooling are not part of that.
 exclude = [
