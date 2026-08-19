@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MiniLake — The Databricks API, running on your laptop</title>
+<meta name="description" content="MiniLake is a free, open-source local Databricks API emulator. Real SQL, real Delta Lake and real Spark job execution — for databricks-sdk, the CLI, Terraform, Asset Bundles and LLM agents. No account, no API key, no cloud bill." />
+<link rel="canonical" href="https://dmux.github.io/minilake/" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://dmux.github.io/minilake/" />
+<meta property="og:title" content="MiniLake — The Databricks API, running on your laptop" />
+<meta property="og:description" content="A local Databricks emulator with real SQL, real Delta Lake and real Spark jobs. Point databricks-sdk, Terraform or an LLM agent at localhost." />
+<meta property="og:image" content="https://dmux.github.io/minilake/assets/og.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="MiniLake — The Databricks API, running on your laptop" />
+<meta name="twitter:description" content="A local Databricks emulator with real SQL, real Delta Lake and real Spark jobs. No account, no API key, no cloud bill." />
+<meta name="twitter:image" content="https://dmux.github.io/minilake/assets/og.png" />
+<meta name="theme-color" content="#0C2340" />
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+/* ---------- tokens ---------- */
+:root{
+  --navy:#0C2340;
+  --navy-2:#16345F;
+  --blue:#0A55D0;
+  --blue-2:#1C64DE;
+  --blue-soft:#EAF1FE;
+  --orange:#F5811F;
+  --orange-soft:#FFF1E3;
+  --ink:#0C2340;
+  --muted:#59688233;
+  --text-muted:#546279;
+  --line:#E3E9F2;
+  --line-soft:#EEF2F8;
+  --bg:#FFFFFF;
+  --bg-alt:#F7F9FD;
+  --code:#0A1B33;
+  --radius:14px;
+  --radius-lg:20px;
+  --shadow-sm:0 1px 2px rgba(12,35,64,.05), 0 1px 3px rgba(12,35,64,.04);
+  --shadow:0 12px 30px -12px rgba(12,35,64,.16), 0 2px 8px rgba(12,35,64,.05);
+  --shadow-lg:0 40px 80px -32px rgba(12,35,64,.32);
+  --maxw:1160px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:88px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:17px;line-height:1.65;letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+img{max-width:100%;display:block}
+a{color:var(--blue);text-decoration:none}
+a:hover{color:var(--blue-2)}
+h1,h2,h3,h4{margin:0;line-height:1.15;letter-spacing:-.03em;font-weight:700}
+p{margin:0}
+code,kbd,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+::selection{background:#0A55D022}
+
+.wrap{width:100%;max-width:var(--maxw);margin-inline:auto;padding-inline:24px}
+.section{padding:96px 0}
+.section--tight{padding:72px 0}
+.alt{background:var(--bg-alt);border-block:1px solid var(--line-soft)}
+
+/* ---------- header ---------- */
+.hdr{position:sticky;top:0;z-index:60;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid transparent;transition:border-color .2s ease, box-shadow .2s ease}
+.hdr.is-stuck{border-bottom-color:var(--line);box-shadow:0 1px 0 rgba(12,35,64,.02)}
+.nav{display:flex;align-items:center;gap:28px;height:68px}
+.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px;color:var(--ink);letter-spacing:-.035em}
+.brand:hover{color:var(--ink)}
+.brand img{width:32px;height:32px}
+.brand .v{font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:0;color:var(--blue);background:var(--blue-soft);border:1px solid #D5E3FC;padding:4px 7px;border-radius:999px;margin-left:2px}
+.nav-links{display:flex;gap:26px;margin-left:auto;align-items:center}
+.nav-links a{color:var(--text-muted);font-size:15px;font-weight:500}
+.nav-links a:hover{color:var(--ink)}
+.nav-cta{display:flex;align-items:center;gap:10px}
+.burger{display:none;margin-left:auto;background:none;border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer;color:var(--ink)}
+
+/* ---------- buttons ---------- */
+.btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;padding:11px 18px;border-radius:11px;border:1px solid transparent;cursor:pointer;transition:transform .12s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;white-space:nowrap}
+.btn svg{width:17px;height:17px;flex:none}
+.btn-primary{background:linear-gradient(180deg,var(--blue-2),var(--blue));color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.25) inset, 0 8px 20px -8px rgba(10,85,208,.6)}
+.btn-primary:hover{color:#fff;transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.3) inset, 0 12px 26px -10px rgba(10,85,208,.7)}
+.btn-ghost{background:#fff;border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:#CBD7EA;color:var(--ink);transform:translateY(-1px)}
+.btn-lg{font-size:16px;padding:14px 22px;border-radius:12px}
+.btn-dark{background:#fff;color:var(--navy)}
+.btn-dark:hover{color:var(--navy);transform:translateY(-1px)}
+.btn-outline-light{border-color:rgba(255,255,255,.28);color:#fff;background:rgba(255,255,255,.06)}
+.btn-outline-light:hover{color:#fff;background:rgba(255,255,255,.12)}
+
+/* ---------- hero ---------- */
+.hero{position:relative;overflow:hidden;padding:84px 0 72px}
+.hero::before{content:"";position:absolute;inset:-30% -10% auto -10%;height:820px;background:
+  radial-gradient(48% 46% at 22% 18%, rgba(10,85,208,.13) 0%, rgba(10,85,208,0) 70%),
+  radial-gradient(42% 40% at 82% 6%, rgba(245,129,31,.13) 0%, rgba(245,129,31,0) 70%);
+  pointer-events:none}
+.hero::after{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(70% 55% at 50% 22%,#000,transparent 75%);mask-image:radial-gradient(70% 55% at 50% 22%,#000,transparent 75%);opacity:.85;pointer-events:none}
+.hero .wrap{position:relative;z-index:1}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,.78fr);gap:48px;align-items:center}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--navy-2);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 14px 6px 8px;box-shadow:var(--shadow-sm)}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 4px var(--orange-soft)}
+h1{font-size:clamp(38px,4.7vw,56px);font-weight:800;margin:22px 0 0;letter-spacing:-.04em}
+h1 .grad{background:linear-gradient(96deg,var(--blue) 10%,var(--orange) 92%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{margin-top:20px;font-size:19px;color:var(--text-muted);max-width:36em}
+.lede strong{color:var(--ink);font-weight:600}
+.hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.hero-note{margin-top:18px;font-size:14px;color:var(--text-muted)}
+.hero-art{display:flex;justify-content:center}
+.hero-art img{width:min(360px,80%);filter:drop-shadow(0 30px 50px rgba(12,35,64,.18))}
+@media (prefers-reduced-motion:no-preference){.hero-art img{animation:float 7s ease-in-out infinite}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+
+/* ---------- install strip ---------- */
+.install{margin-top:34px;display:grid;gap:10px;max-width:640px}
+.cmd{display:flex;align-items:center;gap:12px;background:var(--code);border-radius:12px;padding:13px 13px 13px 16px;box-shadow:var(--shadow)}
+.cmd code{color:#DCE6F7;font-size:14px;overflow-x:auto;white-space:nowrap;flex:1;min-width:0}
+.cmd .p{color:#5F7CA8;user-select:none}
+.cmd .tag{font:500 11px/1 "JetBrains Mono",monospace;color:#7E9DCB;border:1px solid #233A5E;border-radius:6px;padding:5px 7px;white-space:nowrap}
+.copy{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);color:#C9D8EE;border-radius:8px;padding:6px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:600 12px/1 "Inter",sans-serif;transition:background .15s ease,color .15s ease}
+.copy:hover{background:rgba(255,255,255,.14);color:#fff}
+.copy svg{width:13px;height:13px}
+.copy.done{color:#7BE1A6;border-color:#2C5C42}
+
+/* ---------- trust strip ---------- */
+.trust{border-block:1px solid var(--line-soft);background:linear-gradient(180deg,#fff,#FBFCFF)}
+.trust-inner{display:flex;align-items:center;gap:14px 30px;flex-wrap:wrap;padding:22px 0}
+.trust-label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8C9AB2}
+.trust-items{display:flex;flex-wrap:wrap;gap:10px 22px}
+.trust-items span{font-size:14.5px;font-weight:600;color:#42536E;display:inline-flex;align-items:center;gap:8px}
+.trust-items span::before{content:"";width:5px;height:5px;border-radius:50%;background:#C3D0E4}
+
+/* ---------- stats ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:#fff;box-shadow:var(--shadow-sm)}
+.stat{padding:28px 26px;border-right:1px solid var(--line-soft)}
+.stat:last-child{border-right:0}
+.stat b{display:block;font-size:34px;font-weight:800;letter-spacing:-.04em;color:var(--navy);line-height:1.1}
+.stat b em{font-style:normal;color:var(--orange)}
+.stat span{display:block;margin-top:6px;font-size:14.5px;color:var(--text-muted);line-height:1.45}
+
+/* ---------- section heads ---------- */
+.head{max-width:760px;margin-bottom:52px}
+.head.center{margin-inline:auto;text-align:center}
+.kicker{font-size:12.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--blue)}
+.head h2{font-size:clamp(30px,3.6vw,42px);margin-top:14px;font-weight:800}
+.head p{margin-top:16px;font-size:18px;color:var(--text-muted)}
+
+/* ---------- feature grid ---------- */
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px;transition:transform .18s ease,box-shadow .22s ease,border-color .18s ease}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:#D3DFF1}
+.card .ico{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);margin-bottom:16px}
+.card .ico svg{width:20px;height:20px}
+.card.accent .ico{background:var(--orange-soft);color:#D96C10}
+.card h3{font-size:17.5px;font-weight:700;letter-spacing:-.02em}
+.card p{margin-top:9px;font-size:15px;color:var(--text-muted);line-height:1.6}
+.card p code{font-size:13px;background:#F2F5FA;border:1px solid var(--line-soft);border-radius:5px;padding:1px 5px;color:var(--navy-2)}
+.tagline{display:inline-block;margin-top:14px;font:600 12px/1 "Inter",sans-serif;color:#2C7A4B;background:#E9F7EF;border:1px solid #CFEBDC;border-radius:999px;padding:5px 10px}
+.tagline.blue{color:var(--blue);background:var(--blue-soft);border-color:#D5E3FC}
+.tagline.orange{color:#B45A0B;background:var(--orange-soft);border-color:#FBDCBE}
+
+/* ---------- code tabs ---------- */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.tab{background:#fff;border:1px solid var(--line);color:var(--text-muted);font:600 14px/1 "Inter",sans-serif;padding:10px 15px;border-radius:10px;cursor:pointer;transition:.15s ease}
+.tab:hover{color:var(--ink);border-color:#CBD7EA}
+.tab[aria-selected="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.window{background:var(--code);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);overflow:hidden;border:1px solid #16294A}
+.window-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #16294A;background:linear-gradient(180deg,#0E2140,#0A1B33)}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:#FF5F57}.dots i:nth-child(2){background:#FEBC2E}.dots i:nth-child(3){background:#28C840}
+.window-title{margin-left:6px;font:500 12.5px/1 "JetBrains Mono",monospace;color:#7E9DCB}
+.window .copy{margin-left:auto}
+pre{margin:0;padding:24px 26px;overflow-x:auto;font-size:13.6px;line-height:1.75;color:#D7E3F5}
+pre code{color:inherit}
+.tok-c{color:#6E86A8;font-style:italic}
+.tok-s{color:#FFB980}
+.tok-k{color:#79B0FF}
+.tok-f{color:#8FE1C0}
+.tok-n{color:#C6A9FF}
+.split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:44px;align-items:center}
+.checks{display:grid;gap:14px;margin-top:26px;padding:0;list-style:none}
+.checks li{display:flex;gap:12px;font-size:15.5px;color:var(--text-muted);line-height:1.55}
+.checks li b{color:var(--ink);font-weight:600}
+.checks svg{width:20px;height:20px;flex:none;color:#2C7A4B;margin-top:1px}
+
+/* ---------- architecture ---------- */
+.arch{border:1px solid var(--line);background:#fff;border-radius:var(--radius-lg);padding:34px 28px;box-shadow:var(--shadow-sm);overflow-x:auto}
+.arch svg{min-width:720px;width:100%;height:auto;display:block;margin-inline:auto;max-width:960px}
+
+/* ---------- mcp band ---------- */
+.band{background:linear-gradient(160deg,#0C2340 0%,#12305A 55%,#0A2B63 100%);color:#fff;border-radius:26px;padding:56px;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
+.band::after{content:"";position:absolute;inset:auto -80px -140px auto;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(245,129,31,.28),transparent 62%)}
+.band > *{position:relative;z-index:1}
+.band .kicker{color:#FFB36B}
+.band h2{font-size:clamp(28px,3.4vw,40px);font-weight:800;margin-top:14px}
+.band p{color:#B8CBE8;margin-top:16px;font-size:17.5px;max-width:52ch}
+.band-grid{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:44px;align-items:center}
+.tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:28px;padding:0;list-style:none}
+.tool-list li{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:11px 13px;font:500 13px/1.4 "JetBrains Mono",monospace;color:#DCE7F8}
+.tool-list li em{display:block;font:400 12px/1.45 "Inter",sans-serif;font-style:normal;color:#93AACD;margin-top:5px}
+.band .window{box-shadow:0 30px 70px -30px rgba(0,0,0,.7)}
+
+/* ---------- table ---------- */
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:#fff;box-shadow:var(--shadow-sm)}
+table{border-collapse:collapse;width:100%;min-width:680px;font-size:15px}
+th,td{text-align:left;padding:15px 22px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+thead th{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:#7D8CA5;background:#FAFCFF;font-weight:700}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#FBFCFF}
+td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+td.desc{color:var(--text-muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 "Inter",sans-serif;padding:6px 10px;border-radius:999px;white-space:nowrap}
+.pill.real{color:#1F6B45;background:#E9F7EF;border:1px solid #CFEBDC}
+.pill.partial{color:#B45A0B;background:var(--orange-soft);border:1px solid #FBDCBE}
+.pill.no{color:#6B7688;background:#F1F4F9;border:1px solid #E1E7F0}
+
+/* ---------- honest ---------- */
+.honest{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.honest .card{background:#FCFDFF}
+.honest .card h3{font-size:16.5px}
+.note{margin-top:26px;font-size:15px;color:var(--text-muted);border-left:3px solid var(--orange);padding-left:16px;max-width:70ch}
+
+/* ---------- cta ---------- */
+.cta{background:linear-gradient(150deg,#0C2340,#153A73);color:#fff;border-radius:26px;padding:64px 56px;text-align:center;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
+.cta::before{content:"";position:absolute;inset:-60% 30% auto 30%;height:420px;background:radial-gradient(circle,rgba(10,85,208,.5),transparent 65%)}
+.cta > *{position:relative;z-index:1}
+.cta img{width:76px;height:76px;margin:0 auto 24px;background:#fff;border-radius:20px;padding:11px;box-shadow:0 14px 34px -12px rgba(0,0,0,.55)}
+.cta h2{font-size:clamp(28px,3.6vw,42px);font-weight:800}
+.cta p{color:#B8CBE8;margin-top:16px;font-size:18px;max-width:56ch;margin-inline:auto}
+.cta .hero-actions{justify-content:center;margin-top:30px}
+
+/* ---------- footer ---------- */
+.ftr{border-top:1px solid var(--line);padding:56px 0 44px;background:var(--bg-alt)}
+.ftr-grid{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:36px}
+.ftr h4{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#7D8CA5;margin-bottom:14px}
+.ftr ul{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+.ftr a{font-size:15px;color:var(--text-muted)}
+.ftr a:hover{color:var(--blue)}
+.ftr .about{font-size:14.5px;color:var(--text-muted);margin-top:14px;max-width:34ch}
+.ftr-bottom{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:14px;color:#7D8CA5}
+
+/* ---------- reveal (only when JS can undo it) ---------- */
+.js .rv{opacity:0;transform:translateY(14px)}
+.js .rv.in{opacity:1;transform:none;transition:opacity .6s cubic-bezier(.2,.7,.3,1), transform .6s cubic-bezier(.2,.7,.3,1)}
+@media (prefers-reduced-motion:reduce){.js .rv{opacity:1;transform:none}}
+
+/* ---------- responsive ---------- */
+@media (max-width:1024px){
+  .hero-grid{grid-template-columns:1fr;gap:36px}
+  .hero-art{order:-1}
+  .hero-art img{width:190px}
+  .grid,.honest{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .split,.band-grid{grid-template-columns:1fr;gap:32px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat:nth-child(2){border-right:0}
+  .stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--line-soft)}
+  .band,.cta{padding:40px 28px}
+  .ftr-grid{grid-template-columns:1fr 1fr;gap:28px}
+}
+@media (max-width:720px){
+  body{font-size:16px}
+  .section{padding:68px 0}
+  .nav-links{display:none;position:absolute;top:68px;left:0;right:0;background:#fff;border-bottom:1px solid var(--line);flex-direction:column;align-items:stretch;gap:0;padding:8px 24px 18px}
+  .nav-links.open{display:flex}
+  .nav-links a{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+  .nav-cta .btn-ghost{display:none}
+  .burger{display:inline-flex}
+  .grid,.honest,.stats,.tool-list{grid-template-columns:1fr}
+  .stat{border-right:0;border-bottom:1px solid var(--line-soft)}
+  .stat:last-child{border-bottom:0}
+  pre{font-size:12.6px;padding:18px}
+  .ftr-grid{grid-template-columns:1fr}
+}
+</style>
+<script>document.documentElement.className += " js";</script>
+</head>
+<body>
+
+<header class="hdr" id="hdr">
+  <div class="wrap nav">
+    <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake <span class="v">v1.7.1</span></a>
+    <nav class="nav-links" id="navlinks">
+      <a href="#features">Features</a>
+      <a href="#code">Examples</a>
+      <a href="#architecture">How it works</a>
+      <a href="#agents">For agents</a>
+      <a href="#coverage">Coverage</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="https://github.com/dmux/minilake/blob/main/docs/index.md">Docs</a>
+      <a class="btn btn-primary" href="https://github.com/dmux/minilake">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.6 5.6.6 11.9c0 5 3.3 9.3 7.8 10.8.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.7.2 2.9.1 3.2.8.9 1.2 1.9 1.2 3.2 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6a11.4 11.4 0 0 0 7.8-10.8C23.4 5.6 18.3.5 12 .5Z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow"><span class="dot"></span> Open source · MIT · Python 3.11+ · Docker</span>
+        <h1>The Databricks API,<br /><span class="grad">running on your laptop.</span></h1>
+        <p class="lede">
+          MiniLake is a local <strong>Databricks API emulator</strong> with <strong>real SQL</strong>,
+          <strong>real Delta Lake</strong> and <strong>real Spark job execution</strong>. Point
+          <code>databricks-sdk</code>, the Databricks CLI, Terraform, Asset Bundles or an LLM agent at
+          <code>http://localhost:8000</code> — no account, no API key, no cloud bill.
+        </p>
+
+        <div class="install">
+          <div class="cmd">
+            <span class="p">$</span>
+            <code id="cmd-pip">pip install minilake &amp;&amp; minilake --port 8000</code>
+            <span class="tag">PyPI</span>
+            <button class="copy" data-copy="#cmd-pip" aria-label="Copy install command">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+          </div>
+          <div class="cmd">
+            <span class="p">$</span>
+            <code id="cmd-docker">docker run -p 8000:8000 ghcr.io/dmux/minilake:latest</code>
+            <span class="tag">GHCR</span>
+            <button class="copy" data-copy="#cmd-docker" aria-label="Copy docker command">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="https://github.com/dmux/minilake/blob/main/docs/getting-started.md">
+            Get started
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost btn-lg" href="#code">See it in code</a>
+        </div>
+        <p class="hero-note">Then open <code>http://localhost:8000/ui/</code> for the built-in SQL workspace. The image downloads nothing at runtime — it works air-gapped.</p>
+      </div>
+
+      <div class="hero-art">
+        <img src="assets/minilake-logo.png" alt="MiniLake logo" width="360" height="360" fetchpriority="high" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TRUST ============ -->
+<div class="trust">
+  <div class="wrap trust-inner">
+    <span class="trust-label">Drop-in for</span>
+    <div class="trust-items">
+      <span>databricks-sdk (Python)</span>
+      <span>Databricks CLI</span>
+      <span>Terraform provider</span>
+      <span>Asset Bundles</span>
+      <span>PySpark + Delta</span>
+      <span>MCP agents</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ STATS ============ -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="stats rv">
+      <div class="stat"><b>16<em>+</em></b><span>Databricks API groups emulated, from Unity Catalog to Secrets</span></div>
+      <div class="stat"><b>67</b><span>MCP tools for LLM agents, served on the same port</span></div>
+      <div class="stat"><b>138<em>+</em></b><span>tests driven by the real Databricks SDK, not mocks</span></div>
+      <div class="stat"><b>$<em>0</em></b><span>cloud spend — everything runs on your machine</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FEATURES ============ -->
+<section class="section alt" id="features">
+  <div class="wrap">
+    <div class="head center rv">
+      <span class="kicker">What you get</span>
+      <h2>Not a mock server. A real engine behind a Databricks-shaped API.</h2>
+      <p>Fake endpoints let broken code pass. MiniLake executes your SQL on DuckDB, writes real Delta files, and runs real <code>spark-submit</code> jobs in containers — so a green test locally means something.</p>
+    </div>
+
+    <div class="grid">
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+        <h3>Unity Catalog, for real</h3>
+        <p>Catalogs, schemas, tables and volumes with full CRUD. Every catalog is its own DuckDB database file, so <code>catalog.schema.table</code> addressing is native — not a regex rewrite.</p>
+        <span class="tagline">Real execution</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17V7l4 6 4-6 4 6 4-6v10"/></svg></div>
+        <h3>SQL that actually runs</h3>
+        <p>Statement execution on real DuckDB: <code>INLINE</code> and <code>EXTERNAL_LINKS</code> dispositions, <code>JSON_ARRAY</code> / <code>ARROW_STREAM</code> / <code>CSV</code> formats, and a result manifest that carries true column types.</p>
+        <span class="tagline">Real execution</span>
+      </article>
+
+      <article class="card rv accent">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v10l8 5 8-5V7l-8-5Z"/><path d="M12 22V12M4 7l8 5 8-5"/></svg></div>
+        <h3>Real Delta Lake files</h3>
+        <p>EXTERNAL Delta tables are genuine Parquet plus a <code>_delta_log/</code>. <code>INSERT</code>, <code>UPDATE</code> and <code>DELETE</code> are routed through a real Spark job; reads go through DuckDB's <code>delta_scan()</code>.</p>
+        <span class="tagline orange">Real Delta</span>
+      </article>
+
+      <article class="card rv accent">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2Z"/></svg></div>
+        <h3>Jobs that really execute</h3>
+        <p><code>spark_python_task</code> runs <code>spark-submit</code> in a sibling container and returns actual stdout. Real DAG scheduling honours <code>depends_on</code> and <code>run_if</code>, with independent branches in parallel.</p>
+        <span class="tagline orange">Real Spark</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0Z"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z"/></svg></div>
+        <h3>Unity Catalog protocol for Spark</h3>
+        <p><code>spark.table("cat.sch.tbl")</code> resolves against MiniLake through the official <code>UCSingleCatalog</code> connector — the same protocol Spark speaks to a real workspace.</p>
+        <span class="tagline blue">Wire-compatible</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="15" rx="2"/><path d="M2.5 9h19M7 14h5"/></svg></div>
+        <h3>A built-in SQL workspace</h3>
+        <p>An Athena-style editor at <code>/ui</code>: Monaco with catalog-aware completion, a virtualized result grid, charts, CSV/JSON export, saved queries, query history — and an embedded JupyterLab.</p>
+        <span class="tagline blue">Batteries included</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6.5v11L12 22l9-4.5v-11L12 2Z"/><path d="M7.5 9.2v5.3L12 16.8M16.5 9.2v5.3L12 16.8M12 7v9.8"/></svg></div>
+        <h3>Terraform &amp; Asset Bundles</h3>
+        <p>Point the <code>databricks</code> provider at localhost and <code>terraform apply</code> creates real catalogs. <code>databricks bundle deploy</code> and <code>bundle run</code> work end to end — jobs execute for real.</p>
+        <span class="tagline blue">Wire-compatible</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v4"/><rect x="4" y="7" width="16" height="14" rx="3"/><path d="M9 13h.01M15 13h.01M9 17h6"/></svg></div>
+        <h3>An MCP server for agents</h3>
+        <p>67 tools, 8 resources and 4 prompts at <code>/mcp</code> — including composites that collapse a five-call sequence into one, and a SQL-dialect resource that stops agents writing Spark SQL.</p>
+        <span class="tagline">Real execution</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/></svg></div>
+        <h3>Designed for CI</h3>
+        <p>One <code>POST /_minilake/reset</code> gives every test a clean workspace without restarting the container. <code>/health</code>, <code>/ready</code> and <code>/services</code> round out the control plane.</p>
+        <span class="tagline">Test friendly</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10M8 7l4-4 4 4"/><path d="M4 15v3a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-3"/></svg></div>
+        <h3>Workspace, DBFS, Files, Secrets</h3>
+        <p>File-backed notebook and file storage with chunked uploads. Secrets are real CRUD whose values are only ever resolvable inside a job's environment — exactly like Databricks.</p>
+        <span class="tagline">Real execution</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>Air-gapped by design</h3>
+        <p>DuckDB's <code>delta</code> extension and the Delta / Unity Catalog jars are baked in at build time. The image downloads nothing at runtime — provable with <code>docker run --network none</code>.</p>
+        <span class="tagline">Offline ready</span>
+      </article>
+
+      <article class="card rv">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg></div>
+        <h3>Databricks-shaped errors</h3>
+        <p>Failures come back as <code>{"error_code", "message"}</code>, so the SDK raises its normal typed exceptions. Anything out of scope returns a loud <code>501 NOT_IMPLEMENTED</code> instead of a convincing lie.</p>
+        <span class="tagline blue">Wire-compatible</span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CODE ============ -->
+<section class="section" id="code">
+  <div class="wrap">
+    <div class="split">
+      <div class="rv">
+        <span class="kicker">Zero code changes</span>
+        <h2 style="font-size:clamp(30px,3.6vw,42px);margin-top:14px">Change the host. That's the migration.</h2>
+        <p style="margin-top:16px;font-size:18px;color:var(--text-muted)">
+          MiniLake speaks the Databricks REST API on the wire, so every client you already use keeps working —
+          the same calls, the same response shapes, the same typed errors.
+        </p>
+        <ul class="checks">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span><b>Any token is accepted.</b> No sign-up, no PAT, no OAuth dance to develop against.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span><b>Types round-trip.</b> <code>STRING</code>, <code>LONG</code>, <code>DECIMAL(10,2)</code>, <code>ARRAY&lt;T&gt;</code>, <code>MAP</code> and <code>STRUCT</code> map to DuckDB and come back as the SDK's <code>ColumnInfo</code>.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span><b>Physical truth wins.</b> Declared column types that disagree with the files lose, so mismatches are visible instead of believed.</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span><b>Persistence when you want it.</b> <code>MINILAKE_PERSIST=1</code> snapshots state on shutdown and restores it on start.</span></li>
+        </ul>
+      </div>
+
+      <div class="rv">
+        <div class="tabs" role="tablist" aria-label="Code examples">
+          <button class="tab" role="tab" aria-selected="true" data-panel="p-sdk">Python SDK</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="p-spark">Spark &amp; Delta</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="p-tf">Terraform</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="p-bundle">Asset Bundles</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="p-curl">curl</button>
+        </div>
+
+        <div class="window">
+          <div class="window-bar">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span class="window-title" id="win-title">quickstart.py</span>
+            <button class="copy" data-copy=".panel:not([hidden]) code" aria-label="Copy code">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              Copy
+            </button>
+          </div>
+
+          <pre class="panel" id="p-sdk" data-lang="python" data-title="quickstart.py"><code>from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.catalog import ColumnInfo, TableType
+
+# The only line that differs from production
+w = WorkspaceClient(host="http://localhost:8000", token="dev")
+
+w.catalogs.create(name="sales")
+w.schemas.create(name="store", catalog_name="sales")
+w.tables.create(
+    name="orders", catalog_name="sales", schema_name="store",
+    table_type=TableType.MANAGED,
+    data_source_format="DELTA", storage_location="/data/sales/store/orders",
+    columns=[
+        ColumnInfo(name="id", type_text="BIGINT"),
+        ColumnInfo(name="customer", type_text="STRING"),
+        ColumnInfo(name="amount", type_text="DECIMAL(10,2)"),
+    ],
+)
+
+wh = w.warehouses.create(name="dev", cluster_size="Small")
+w.statement_execution.execute_statement(
+    warehouse_id=wh.id,
+    statement="INSERT INTO sales.store.orders VALUES (1, 'Ana', 459.90)",
+)
+
+result = w.statement_execution.execute_statement(
+    warehouse_id=wh.id,
+    statement="SELECT customer, amount FROM sales.store.orders",
+)
+print(result.result.data_array)   # [['Ana', '459.90']] — really stored</code></pre>
+
+          <pre class="panel" id="p-spark" hidden data-lang="python" data-title="delta_job.py"><code>from pyspark.sql import SparkSession
+
+UC = "http://localhost:8000"
+
+spark = (
+    SparkSession.builder
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    # Unity Catalog connector — three-part names resolve against MiniLake
+    .config("spark.sql.catalog.spark_catalog", "io.unitycatalog.spark.UCSingleCatalog")
+    .config("spark.sql.catalog.spark_catalog.uri", UC)
+    .config("spark.sql.catalog.sales", "io.unitycatalog.spark.UCSingleCatalog")
+    .config("spark.sql.catalog.sales.uri", UC)
+    .getOrCreate()
+)
+
+# Real Delta files: parquet + _delta_log/, written by real Spark
+spark.createDataFrame([(1, "a"), (2, "b")], ["id", "name"]) \
+     .write.format("delta").mode("overwrite").save("/data/delta/sales/store/events")
+
+spark.sql("INSERT INTO sales.store.events VALUES (3, 'c')")
+print(spark.table("sales.store.events").count())   # 3
+
+# ...and the same bytes are readable through MiniLake's SQL API:
+#   SELECT e.name, o.customer
+#   FROM sales.store.events e JOIN sales.store.orders o ON o.id = e.id</code></pre>
+
+          <pre class="panel" id="p-tf" hidden data-lang="hcl" data-title="main.tf"><code>provider "databricks" {
+  host  = "http://localhost:8000"
+  token = "dev"
+}
+
+resource "databricks_catalog" "sandbox" {
+  name    = "sandbox"
+  comment = "Local sandbox catalog"
+}
+
+resource "databricks_schema" "things" {
+  catalog_name = databricks_catalog.sandbox.name
+  name         = "things"
+}
+
+resource "databricks_sql_endpoint" "compute" {
+  name         = "local-compute"
+  cluster_size = "Small"
+}
+
+# terraform apply  -> creates real catalogs and real DuckDB databases
+# terraform destroy -> removes them
+# Resources backed by APIs MiniLake does not emulate fail loudly with 501,
+# instead of silently pretending to succeed.</code></pre>
+
+          <pre class="panel" id="p-bundle" hidden data-lang="yaml" data-title="databricks.yml"><code>bundle:
+  name: my_pipeline
+
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: http://localhost:8000
+
+resources:
+  jobs:
+    daily_load:
+      name: daily_load
+      tasks:
+        - task_key: main
+          spark_python_task:
+            python_file: ../src/load.py
+
+# $ databricks bundle deploy -t dev
+# $ databricks bundle run daily_load -t dev
+#
+# The CLI syncs files through the Workspace API, the provider creates the job,
+# and `bundle run` executes it on real Spark in a sibling container —
+# returning the job's actual output.</code></pre>
+
+          <pre class="panel" id="p-curl" hidden data-lang="bash" data-title="terminal"><code># Is it up, and which services answered?
+curl http://localhost:8000/_minilake/health
+
+# Create a catalog through the Databricks API surface
+curl -X POST http://localhost:8000/api/2.1/unity-catalog/catalogs \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "sales"}'
+
+# Run SQL and get real rows back
+curl -X POST http://localhost:8000/api/2.0/sql/statements \
+  -H 'Content-Type: application/json' \
+  -d '{"warehouse_id": "dev", "statement": "SELECT 42 AS answer"}'
+
+# Give the next test a clean workspace — no restart needed
+curl -X POST http://localhost:8000/_minilake/reset</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section class="section alt" id="architecture">
+  <div class="wrap">
+    <div class="head center rv">
+      <span class="kicker">How it works</span>
+      <h2>One process. One port. Real engines underneath.</h2>
+      <p>A FastAPI application serves the Databricks REST surface, the web UI and the MCP endpoint together. Behind it sit DuckDB, real Delta files on disk, and Docker for Spark.</p>
+    </div>
+
+    <div class="arch rv">
+      <svg viewBox="0 0 960 430" role="img" aria-label="Architecture: Databricks SDK, CLI, Terraform, PySpark and LLM agents talk to MiniLake on port 8000, which serves the REST API, the web UI and the MCP endpoint, backed by DuckDB, Delta files and Docker-run Spark.">
+        <defs>
+          <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#12305A"/><stop offset="1" stop-color="#0A2B63"/>
+          </linearGradient>
+          <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 10 5 0 10z" fill="#9DB2CE"/>
+          </marker>
+          <style>
+            .lbl{font:600 13px "Inter",sans-serif;fill:#0C2340}
+            .sub{font:400 11.5px "Inter",sans-serif;fill:#6B7B94}
+            .wht{font:700 15px "Inter",sans-serif;fill:#fff}
+            .wsub{font:400 12px "JetBrains Mono",monospace;fill:#9FBBE4}
+            .chip{font:600 12px "JetBrains Mono",monospace;fill:#DCE7F8}
+            .cap{font:700 10.5px "Inter",sans-serif;fill:#8C9AB2;letter-spacing:.12em}
+            .box{fill:#fff;stroke:#DCE4F0}
+            .line{stroke:#C4D1E4;stroke-width:1.6;fill:none}
+          </style>
+        </defs>
+
+        <text class="cap" x="24" y="26">CLIENTS</text>
+        <g>
+          <rect class="box" x="24" y="42" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="63">databricks-sdk</text><text class="sub" x="42" y="79">WorkspaceClient (Python)</text>
+          <rect class="box" x="24" y="100" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="121">Databricks CLI</text><text class="sub" x="42" y="137">bundle deploy · bundle run</text>
+          <rect class="box" x="24" y="158" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="179">Terraform provider</text><text class="sub" x="42" y="195">apply · destroy</text>
+          <rect class="box" x="24" y="216" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="237">PySpark / JupyterLab</text><text class="sub" x="42" y="253">spark.table("cat.sch.tbl")</text>
+          <rect class="box" x="24" y="274" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="295">LLM agents</text><text class="sub" x="42" y="311">Model Context Protocol</text>
+          <rect class="box" x="24" y="332" width="212" height="46" rx="10"/>
+          <text class="lbl" x="42" y="353">Browser</text><text class="sub" x="42" y="369">SQL workspace at /ui</text>
+        </g>
+
+        <path class="line" d="M236 65 C 300 65, 300 200, 352 200" marker-end="url(#arw)"/>
+        <path class="line" d="M236 123 C 300 123, 305 200, 352 200" marker-end="url(#arw)"/>
+        <path class="line" d="M236 181 C 300 181, 320 200, 352 200" marker-end="url(#arw)"/>
+        <path class="line" d="M236 239 C 300 239, 320 205, 352 205" marker-end="url(#arw)"/>
+        <path class="line" d="M236 297 C 300 297, 305 210, 352 210" marker-end="url(#arw)"/>
+        <path class="line" d="M236 355 C 300 355, 300 215, 352 215" marker-end="url(#arw)"/>
+
+        <text class="cap" x="352" y="26">MINILAKE · ONE PROCESS</text>
+        <rect x="352" y="42" width="256" height="336" rx="18" fill="url(#core)"/>
+        <text class="wht" x="376" y="76">MiniLake</text>
+        <text class="wsub" x="376" y="96">FastAPI · uvicorn · :8000</text>
+
+        <rect x="376" y="116" width="208" height="52" rx="10" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.16)"/>
+        <text class="chip" x="392" y="139">/api/2.0 · /api/2.1</text>
+        <text class="wsub" x="392" y="157">Databricks REST surface</text>
+
+        <rect x="376" y="180" width="208" height="52" rx="10" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.16)"/>
+        <text class="chip" x="392" y="203">/ui  ·  /jupyter</text>
+        <text class="wsub" x="392" y="221">SQL workspace + notebooks</text>
+
+        <rect x="376" y="244" width="208" height="52" rx="10" fill="rgba(245,129,31,.16)" stroke="rgba(245,129,31,.42)"/>
+        <text class="chip" x="392" y="267">/mcp</text>
+        <text class="wsub" x="392" y="285">67 tools for agents</text>
+
+        <rect x="376" y="308" width="208" height="52" rx="10" fill="rgba(255,255,255,.08)" stroke="rgba(255,255,255,.16)"/>
+        <text class="chip" x="392" y="331">/_minilake/*</text>
+        <text class="wsub" x="392" y="349">health · ready · reset</text>
+
+        <path class="line" d="M608 120 C 664 120, 668 96, 724 96" marker-end="url(#arw)"/>
+        <path class="line" d="M608 200 C 664 200, 668 200, 724 200" marker-end="url(#arw)"/>
+        <path class="line" d="M608 280 C 664 280, 668 304, 724 304" marker-end="url(#arw)"/>
+
+        <text class="cap" x="724" y="26">REAL ENGINES</text>
+        <rect class="box" x="724" y="66" width="212" height="60" rx="12"/>
+        <text class="lbl" x="744" y="90">DuckDB</text>
+        <text class="sub" x="744" y="108">one database file per catalog</text>
+
+        <rect class="box" x="724" y="170" width="212" height="60" rx="12"/>
+        <text class="lbl" x="744" y="194">Delta Lake on disk</text>
+        <text class="sub" x="744" y="212">parquet + _delta_log/</text>
+
+        <rect class="box" x="724" y="274" width="212" height="60" rx="12"/>
+        <text class="lbl" x="744" y="298">Docker → Apache Spark</text>
+        <text class="sub" x="744" y="316">spark-submit, sibling container</text>
+
+        <path class="line" d="M830 230 L 830 274" marker-end="url(#arw)"/>
+        <path class="line" d="M830 274 L 830 230" marker-end="url(#arw)"/>
+        <text class="sub" x="724" y="358">Spark writes the files —</text>
+        <text class="sub" x="724" y="374">DuckDB reads the same bytes</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============ MCP BAND ============ -->
+<section class="section" id="agents">
+  <div class="wrap">
+    <div class="band rv">
+      <div class="band-grid">
+        <div>
+          <span class="kicker">For LLM agents</span>
+          <h2>Give an agent a lakehouse it can't break.</h2>
+          <p>
+            A Databricks workspace is an awkward thing for an agent to drive: every useful action is four calls
+            deep, half the SQL it writes is the wrong dialect, and failures are silent. MiniLake's MCP server
+            closes those gaps — and it costs nothing when the agent gets it wrong.
+          </p>
+          <ul class="tool-list">
+            <li>setup_fixture()<em>catalog + schema + warehouse in one idempotent call</em></li>
+            <li>seed_table()<em>table + rows, exactly the rows you asked for</em></li>
+            <li>describe_catalog_tree()<em>the whole hierarchy instead of dozens of calls</em></li>
+            <li>run_python_script()<em>stage, submit to real Spark, poll, return stdout</em></li>
+          </ul>
+          <p style="margin-top:24px;font-size:15.5px;color:#93AACD">
+            Plus 8 resources — including a SQL-dialect guide that stops agents writing Spark SQL at DuckDB —
+            and 4 prompts that front-load the rules. Tools run through MiniLake's own ASGI stack, so an agent's
+            error is exactly the error an SDK client would have seen.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-dark" href="https://github.com/dmux/minilake/blob/main/docs/mcp/index.md">MCP documentation</a>
+            <a class="btn btn-outline-light" href="https://github.com/dmux/minilake/blob/main/docs/mcp/tools.md">All 67 tools</a>
+          </div>
+        </div>
+
+        <div>
+          <div class="window">
+            <div class="window-bar">
+              <span class="dots"><i></i><i></i><i></i></span>
+              <span class="window-title">register + use</span>
+            </div>
+            <pre data-lang="bash"><code># One line to register it with Claude Code
+claude mcp add --transport http minilake http://localhost:8000/mcp
+
+# Then just ask:
+#   "Use minilake: create a sales catalog with a seeded
+#    orders table, and tell me the total."
+
+# The agent does this — three calls, no glue code:
+#   setup_fixture({"catalog": "sales", "schema": "store"})
+#   seed_table({"full_name": "sales.store.orders", ...})
+#   run_sql({"statement": "SELECT SUM(amount) FROM sales.store.orders"})
+
+# Enable it on the server side:
+MINILAKE_MCP=1 minilake --port 8000</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ COVERAGE ============ -->
+<section class="section alt" id="coverage">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Coverage</span>
+      <h2>What's emulated, and how honestly.</h2>
+      <p>Every row below is either really executed or clearly labelled. Anything out of scope answers <code>501 NOT_IMPLEMENTED</code> rather than faking a success your production code will not get.</p>
+    </div>
+
+    <div class="table-wrap rv">
+      <table>
+        <thead>
+          <tr><th>Service</th><th>Status</th><th>What that means</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Unity Catalog</td><td><span class="pill real">Real</span></td><td class="desc">Catalogs, schemas, tables, volumes — each catalog is its own DuckDB database, with native three-part addressing</td></tr>
+          <tr><td>SQL statements</td><td><span class="pill real">Real</span></td><td class="desc">Executed on DuckDB; all three formats and both dispositions, with a typed result manifest</td></tr>
+          <tr><td>EXTERNAL Delta tables</td><td><span class="pill real">Real</span></td><td class="desc">Genuine Delta files; writes go through a generated Spark job, reads through <code>delta_scan()</code></td></tr>
+          <tr><td>Jobs</td><td><span class="pill real">Real</span></td><td class="desc"><code>spark-submit</code> in sibling containers (or a subprocess fallback), real DAG scheduling, real logs</td></tr>
+          <tr><td>SQL warehouses</td><td><span class="pill real">Real</span></td><td class="desc">Full CRUD and lifecycle; statements run regardless of state, as they do locally</td></tr>
+          <tr><td>Query history &amp; saved queries</td><td><span class="pill real">Real</span></td><td class="desc">Server-backed, failures included — which is usually why you opened history</td></tr>
+          <tr><td>Workspace, DBFS &amp; Files</td><td><span class="pill real">Real</span></td><td class="desc">File-backed storage with chunked upload; raw-bytes sync is what makes <code>bundle deploy</code> work</td></tr>
+          <tr><td>Secrets</td><td><span class="pill real">Real</span></td><td class="desc">Real CRUD; values are resolvable only inside job environment variables, never through the API</td></tr>
+          <tr><td>Web UI &amp; notebooks</td><td><span class="pill real">Real</span></td><td class="desc">Athena-style SQL workspace at <code>/ui</code>, with JupyterLab proxied at <code>/jupyter</code></td></tr>
+          <tr><td>MCP server</td><td><span class="pill real">Real</span></td><td class="desc">Opt-in with <code>MINILAKE_MCP=1</code>: 67 tools, 8 resources, 4 prompts on the same port</td></tr>
+          <tr><td>Persistence</td><td><span class="pill real">Real</span></td><td class="desc"><code>MINILAKE_PERSIST=1</code> snapshots state as JSON on shutdown and restores it on startup</td></tr>
+          <tr><td>Clusters</td><td><span class="pill partial">State machine</span></td><td class="desc">CRUD plus timed lifecycle transitions — deliberately no Spark compute; that lives in Jobs</td></tr>
+          <tr><td>Permissions</td><td><span class="pill partial">Allow-all CRUD</span></td><td class="desc">Real create/read/update, but nothing is ever enforced — this is a single-user tool</td></tr>
+          <tr><td>Identity (SCIM)</td><td><span class="pill partial">Static</span></td><td class="desc">A fixed current-user endpoint; there is exactly one user and any token is accepted</td></tr>
+          <tr><td>DLT, Model Registry, Vector Search, Dashboards, Repos</td><td><span class="pill no">Not implemented</span></td><td class="desc">Returns <code>501 NOT_IMPLEMENTED</code> — loudly, so you never mistake it for working</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HONEST ============ -->
+<section class="section">
+  <div class="wrap">
+    <div class="head rv">
+      <span class="kicker">Straight talk</span>
+      <h2>What MiniLake is not.</h2>
+      <p>These are deliberate design decisions, not a backlog. MiniLake targets one developer running it locally — not a shared, multi-tenant server.</p>
+    </div>
+    <div class="honest">
+      <article class="card rv"><h3>No authentication</h3><p>Any token is accepted and there is exactly one user. Never expose it beyond localhost.</p></article>
+      <article class="card rv"><h3>No access control</h3><p>The Permissions API is real CRUD that always allows everything — a passing test here says nothing about grants in a real workspace.</p></article>
+      <article class="card rv"><h3>DuckDB, not Spark SQL</h3><p>Statements run on DuckDB's dialect. The MCP server ships a dialect resource for exactly this reason; the docs carry the translation table.</p></article>
+      <article class="card rv"><h3>No Spark on clusters</h3><p>The cluster lifecycle is a state machine. Real Spark happens through Jobs, in sibling containers.</p></article>
+      <article class="card rv"><h3>Single process, no HA</h3><p>DuckDB is single-writer, so concurrent load serializes on a lock. Fine for dev and CI; not a deployment target.</p></article>
+      <article class="card rv"><h3>MANAGED tables are invisible to Spark</h3><p>They are DuckDB tables with no files. Use EXTERNAL Delta when Spark has to see the data — that trade-off is what keeps SQL fast.</p></article>
+    </div>
+    <p class="note rv">Being explicit about the edges is the point: an emulator that quietly fakes what it cannot do is worse than no emulator at all.</p>
+  </div>
+</section>
+
+<!-- ============ CTA ============ -->
+<section class="section" style="padding-top:0">
+  <div class="wrap">
+    <div class="cta rv">
+      <img src="assets/minilake-logo.png" alt="" width="64" height="64" />
+      <h2>Your lakehouse, on localhost, in one command.</h2>
+      <p>Free and MIT-licensed. No account, no API key, no cloud bill — and nothing to uninstall from your cloud account when you're done.</p>
+      <div class="hero-actions">
+        <a class="btn btn-dark btn-lg" href="https://github.com/dmux/minilake/blob/main/docs/getting-started.md">Read the quickstart</a>
+        <a class="btn btn-outline-light btn-lg" href="https://github.com/dmux/minilake">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.6 5.6.6 11.9c0 5 3.3 9.3 7.8 10.8.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.7.2 2.9.1 3.2.8.9 1.2 1.9 1.2 3.2 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6a11.4 11.4 0 0 0 7.8-10.8C23.4 5.6 18.3.5 12 .5Z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr-grid">
+      <div>
+        <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake</a>
+        <p class="about">A free, open-source local Databricks API emulator for offline development and testing.</p>
+      </div>
+      <div>
+        <h4>Get started</h4>
+        <ul>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/getting-started.md">Getting started</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/configuration.md">Configuration</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/ui.md">Web UI</a></li>
+          <li><a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container image</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Build with it</h4>
+        <ul>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/databricks-sdk.md">Databricks SDK</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/terraform.md">Terraform &amp; Bundles</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/spark-and-delta.md">Spark &amp; Delta Lake</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/mcp/index.md">MCP server</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/dmux/minilake/blob/main/FEATURES.md">Feature status</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/docs/testing.md">Testing &amp; development</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/CONTRIBUTING.md">Contributing</a></li>
+          <li><a href="https://github.com/dmux/minilake/blob/main/CHANGELOG.md">Changelog</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="ftr-bottom">
+      <span>MIT licensed · Not affiliated with or endorsed by Databricks, Inc.</span>
+      <span>Built for developers who'd rather not rent a workspace to run a test.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* sticky header shadow */
+  var hdr = document.getElementById("hdr");
+  var onScroll = function () { hdr.classList.toggle("is-stuck", window.scrollY > 8); };
+  onScroll();
+  window.addEventListener("scroll", onScroll, { passive: true });
+
+  /* mobile nav */
+  var burger = document.getElementById("burger");
+  var links = document.getElementById("navlinks");
+  burger.addEventListener("click", function () {
+    var open = links.classList.toggle("open");
+    burger.setAttribute("aria-expanded", String(open));
+  });
+  links.addEventListener("click", function (e) {
+    if (e.target.tagName === "A") { links.classList.remove("open"); burger.setAttribute("aria-expanded", "false"); }
+  });
+
+  /* tabs */
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
+  var title = document.getElementById("win-title");
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute("aria-selected", String(on));
+        var panel = document.getElementById(t.dataset.panel);
+        if (panel) panel.hidden = !on;
+        if (on && panel && title) title.textContent = panel.dataset.title || "";
+      });
+    });
+  });
+
+  /* copy buttons */
+  document.querySelectorAll(".copy").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var el = document.querySelector(btn.dataset.copy);
+      if (!el) return;
+      var text = el.innerText;
+      var done = function () {
+        var original = btn.lastChild.nodeValue;
+        btn.classList.add("done");
+        btn.lastChild.nodeValue = " Copied";
+        setTimeout(function () { btn.classList.remove("done"); btn.lastChild.nodeValue = original; }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      } else {
+        var ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); done(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+  });
+
+  /* tiny syntax highlighter — cosmetic only */
+  var RULES = {
+    python: [
+      [/(#[^\n]*)/g, "tok-c"],
+      [/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g, "tok-s"],
+      [/\b(from|import|def|class|return|if|else|elif|for|while|with|as|not|in|and|or|None|True|False|print|lambda)\b/g, "tok-k"]
+    ],
+    bash: [
+      [/(#[^\n]*)/g, "tok-c"],
+      [/("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/g, "tok-s"],
+      [/\b(curl|docker|pip|claude|minilake|databricks|terraform|export|cd)\b/g, "tok-f"],
+      [/(\s-{1,2}[A-Za-z][\w-]*)/g, "tok-k"]
+    ],
+    hcl: [
+      [/(#[^\n]*)/g, "tok-c"],
+      [/("(?:[^"\\\n]|\\.)*")/g, "tok-s"],
+      [/\b(provider|resource|variable|output|module|data)\b/g, "tok-k"]
+    ],
+    yaml: [
+      [/(#[^\n]*)/g, "tok-c"],
+      [/("(?:[^"\\\n]|\\.)*")/g, "tok-s"],
+      [/^([ \t]*[-\w./]+)(?=:)/gm, "tok-k"]
+    ]
+  };
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  document.querySelectorAll("pre[data-lang]").forEach(function (pre) {
+    var rules = RULES[pre.dataset.lang];
+    if (!rules) return;
+    var code = pre.querySelector("code") || pre;
+    var src = code.textContent;
+    var marks = [];                       /* [start, end, cls] non-overlapping */
+    rules.forEach(function (rule) {
+      var re = new RegExp(rule[0].source, rule[0].flags);
+      var m;
+      while ((m = re.exec(src)) !== null) {
+        if (m[0] === "") { re.lastIndex++; continue; }
+        var start = m.index + m[0].indexOf(m[1] !== undefined ? m[1] : m[0]);
+        var end = start + (m[1] !== undefined ? m[1].length : m[0].length);
+        var clash = marks.some(function (k) { return start < k[1] && end > k[0]; });
+        if (!clash) marks.push([start, end, rule[1]]);
+      }
+    });
+    marks.sort(function (a, b) { return a[0] - b[0]; });
+    var out = "", cursor = 0;
+    marks.forEach(function (k) {
+      out += escapeHtml(src.slice(cursor, k[0]));
+      out += '<span class="' + k[2] + '">' + escapeHtml(src.slice(k[0], k[1])) + "</span>";
+      cursor = k[1];
+    });
+    out += escapeHtml(src.slice(cursor));
+    code.innerHTML = out;
+  });
+
+  /* reveal on scroll */
+  var reveal = document.querySelectorAll(".rv");
+  if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    reveal.forEach(function (el) { el.classList.add("in"); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry, i) {
+        if (!entry.isIntersecting) return;
+        var el = entry.target;
+        setTimeout(function () { el.classList.add("in"); }, Math.min(i * 60, 240));
+        io.unobserve(el);
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    reveal.forEach(function (el) { io.observe(el); });
+  }
+})();
+</script>
+</body>
+</html>
