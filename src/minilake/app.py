@@ -2,18 +2,18 @@
 
 import asyncio
 import logging
+import mimetypes
 import textwrap
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
-try:
-    # Single source of truth: the version declared in pyproject.toml.
-    __version__ = version("minilake")
-except PackageNotFoundError:  # not installed (e.g. running from a bare checkout)
-    __version__ = "0.0.0+unknown"
-
+from minilake import notebook as notebook_server
 from minilake.admin import register_service_state_functions, set_duckdb_pool
 from minilake.admin import router as admin_router
 from minilake.config import settings
@@ -22,6 +22,19 @@ from minilake.duckdb_pool import DuckDBPool
 from minilake.errors import install_exception_handlers
 from minilake.persistence import load_state, save_state
 from minilake.services import get_enabled_routers, get_service_module, get_state_functions
+
+# Next.js ships hashed .woff2 fonts and .svg assets. Without these registrations
+# Python's mimetypes guesses application/octet-stream on a bare python:slim image
+# (no /etc/mime.types), and the browser refuses to apply the font.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
+mimetypes.add_type("image/svg+xml", ".svg")
+
+try:
+    # Single source of truth: the version declared in pyproject.toml.
+    __version__ = version("minilake")
+except PackageNotFoundError:  # not installed (e.g. running from a bare checkout)
+    __version__ = "0.0.0+unknown"
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +57,7 @@ _SERVICE_DISPLAY_NAMES = {
     "files": "Files",
     "sql_statements": "SQL Statements",
     "sql_warehouses": "SQL Warehouses",
+    "saved_queries": "Saved Queries",
     "unity_catalog": "Unity Catalog",
     "workspace": "Workspace",
     "clusters": "Clusters",
@@ -131,9 +145,16 @@ async def lifespan(app: FastAPI):
         # execution so the first real job run doesn't pay the cold-start cost.
         asyncio.create_task(asyncio.to_thread(prewarm_spark_image))
 
+        # Same treatment for JupyterLab: it takes a few seconds to bind its port, and
+        # nothing else in startup depends on it, so waiting here would only delay the
+        # API. The proxy answers 503 until it is ready.
+        if settings.notebook_enabled:
+            asyncio.create_task(notebook_server.start())
+
         yield
 
         logger.info("minilake shutting down...")
+        await notebook_server.stop()
         if settings.persist_state:
             get_funcs = {name: funcs["get_state"] for name, funcs in state_functions.items()}
             await save_state(settings.resolved_snapshot_path, get_funcs)
@@ -142,6 +163,26 @@ async def lifespan(app: FastAPI):
         mcp_client = getattr(app.state, "mcp_client", None)
         if mcp_client is not None:
             await mcp_client.aclose()
+
+
+def _resolve_ui_dir() -> Path | None:
+    """Locate the built web UI, or None if this install has none.
+
+    Two layouts, both real: an installed wheel carries the export inside the
+    package (`minilake/ui_static`), while a source checkout has it where Next.js
+    writes it (`ui/out`). Checking the package path first matters because the
+    Docker image installs editable — both paths exist there, and only the
+    packaged one is guaranteed to be the copy that was built for this image.
+    """
+    packaged = Path(__file__).parent / "ui_static"
+    if packaged.is_dir():
+        return packaged
+
+    checkout = Path(__file__).resolve().parents[2] / "ui" / "out"
+    if checkout.is_dir():
+        return checkout
+
+    return None
 
 
 def create_app() -> FastAPI:
@@ -156,6 +197,19 @@ def create_app() -> FastAPI:
     # Install exception handlers (DatabricksError -> {error_code, message})
     install_exception_handlers(app)
 
+    # Same-origin is the normal case (the UI is served from /ui by this same app);
+    # this exists only so the UI's Next.js dev server on another port can reach the
+    # API during development.
+    if settings.dev_cors:
+        logger.warning("MINILAKE_DEV_CORS is set: allowing cross-origin API access from any origin")
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     # Include admin router unconditionally
     app.include_router(admin_router)
 
@@ -163,6 +217,24 @@ def create_app() -> FastAPI:
     for service_name, router in get_enabled_routers():
         logger.info(f"Including router for service: {service_name}")
         app.include_router(router)
+
+    # Reverse-proxy for the embedded JupyterLab. Registered before the "/" MCP mount
+    # (which would shadow it) and kept off the /api/* namespace, so the 501 catch-all
+    # is unaffected.
+    if settings.notebook_enabled:
+        app.include_router(notebook_server.router, prefix="/" + settings.notebook_path.strip("/"))
+
+    # Mount the embedded web UI if this install carries one.
+    ui_dir = _resolve_ui_dir()
+    if ui_dir is not None:
+        app.mount("/ui", StaticFiles(directory=str(ui_dir), html=True), name="ui")
+
+        # Nothing else answers on "/", and a bare http://localhost:8000 is the first
+        # thing anyone tries. Registered here rather than after mount_mcp, which
+        # mounts at "/" and would shadow it.
+        @app.get("/", include_in_schema=False)
+        async def _ui_root() -> RedirectResponse:
+            return RedirectResponse(url="/ui/")
 
     # MCP must be attached last: its ASGI app is mounted at "/" and a root mount matches
     # every path, so anything registered after it becomes unreachable. Routes registered

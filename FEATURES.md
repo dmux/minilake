@@ -4,8 +4,8 @@
 
 **minilake** is a local Databricks API emulator backed by DuckDB for real SQL execution. This document details all implemented features, APIs, and their current status.
 
-**Latest Update:** 2026-08-08
-**Version:** 1.6.0
+**Latest Update:** 2026-08-18
+**Version:** 1.7.0 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
 
 ---
@@ -169,6 +169,68 @@ after each item, run via
 - ⚠️ No warehouse auto-scaling
 
 **Status:** ✅ Complete and tested
+
+---
+
+### 3a. **Query History** ✅
+
+**Module:** `minilake/services/sql_statements.py` (same router and same state)
+**Endpoints:**
+
+- `GET /api/2.0/sql/history/queries` — List executed queries, newest first
+
+**Key Features:**
+
+- ✅ Backed by the statement cache, not a second store — nothing can drift
+- ✅ **Failed statements are recorded**, which is what a history panel is for
+- ✅ `filter_by.statuses` / `.warehouse_ids` / `.statement_ids` /
+  `.query_start_time_range.*`, in the dotted, repeatable form the SDK emits
+  (`_BaseClient._fix_query_string`); a JSON-encoded `filter_by=` also works
+- ✅ `max_results` (default 100, max 1000) with an offset `page_token`
+- ✅ `include_metrics=true` fills the metrics minilake can actually measure
+
+**SDK:** `w.query_history.list(filter_by=QueryFilter(...), include_metrics=True)`
+
+**Limitations:**
+
+- ⚠️ `SUCCEEDED` becomes `FINISHED` — the two APIs genuinely use different
+  vocabularies for the success case
+- ⚠️ Bounded by `MINILAKE_STATEMENT_CACHE_SIZE` (default 500); older entries lose
+  their rows first, then drop out entirely
+- ⚠️ Metrics beyond time and row count are omitted rather than invented — there is
+  no distributed engine here to measure
+
+**Status:** ✅ Complete and tested (`tests/test_query_history.py`)
+
+---
+
+### 3b. **Saved Queries** ✅
+
+**Module:** `minilake/services/saved_queries.py`
+**Endpoints:**
+
+- `POST /api/2.0/sql/queries` — Create
+- `GET /api/2.0/sql/queries` — List (paginated; the array key is `results`)
+- `GET /api/2.0/sql/queries/{id}` — Get
+- `PATCH /api/2.0/sql/queries/{id}` — Update
+- `DELETE /api/2.0/sql/queries/{id}` — Delete
+
+**Key Features:**
+
+- ✅ `update_mask` honoured, read from the body (where the SDK puts it) or the
+  query string — only the named fields are applied
+- ✅ `auto_resolve_display_name` appends ` (n)` on a name clash; without it a
+  duplicate name is a 400
+- ✅ Persisted with `MINILAKE_PERSIST=1`
+
+**SDK:** `w.queries.create/get/list/update/delete`
+
+**Limitations:**
+
+- ⚠️ Metadata only — nothing here executes SQL
+- ⚠️ Query parameters are stored and returned verbatim, never substituted
+
+**Status:** ✅ Complete and tested (`tests/test_saved_queries.py`)
 
 ---
 
@@ -510,6 +572,50 @@ docker compose --profile notebook up -d
 
 ---
 
+### 12a. **Embedded JupyterLab — notebooks inside minilake** ✅
+
+**Module:** `minilake/notebook.py`, extra `minilake[notebook]` (bundled in the image)
+**Served at:** `/jupyter` (proxied), framed by the UI at `/ui/notebooks`
+
+A real JupyterLab running as a child process of minilake, reverse-proxied through
+minilake's own origin. On by default; `MINILAKE_NOTEBOOK=0` turns it off.
+
+**Key Features:**
+
+- ✅ **Same origin, one port.** jupyter-server sends
+  `Content-Security-Policy: frame-ancestors 'self'`, so a notebook server on its own
+  port cannot be framed by the UI. Proxying it under `/jupyter` satisfies `'self'`
+  without weakening the policy — this is what makes the embedded page possible at all
+- ✅ **Full kernel support**: the proxy relays WebSockets, so kernels connect, execute
+  and stream output normally. HTTP responses stream rather than buffer, for Lab's
+  multi-megabyte bundles
+- ✅ **Loopback-bound child process** (`--ServerApp.ip=127.0.0.1`): reachable only
+  through minilake, so it is exposed exactly as far as minilake is
+- ✅ **No second Spark in the image.** Notebooks reach real Spark through the Jobs API,
+  in the same sibling containers a job uses. The bundled quickstart carries the helper
+  that stages a script, runs it and returns its output — the `run_python_script` recipe
+- ✅ **Seeded quickstart** (`minilake/notebooks/`), copied into the notebook directory
+  once and never overwritten afterwards, so edits survive an upgrade
+- ✅ `MINILAKE_HOST` / `MINILAKE_DATA_DIR` injected into the kernel environment, so a
+  notebook never hardcodes a port
+
+**Limitations:**
+
+- ⚠️ **No auth**, like the rest of minilake. An embedded Jupyter is arbitrary code
+  execution in the container — the same exposure the Jobs API already carries, but do
+  not put minilake on a network you do not trust
+- ⚠️ `--allow-root` is passed because the image runs as root; jupyter-server otherwise
+  refuses to start, and the only symptom is a 503 from the proxy
+- ⚠️ The kernel has no `pyspark`. `SparkSession` in a cell fails; submit through the
+  Jobs API instead. The separate `--profile notebook` container remains for anyone who
+  wants a local `SparkSession`
+
+**Status:** ✅ Complete and tested — `tests/test_notebook.py`, plus the quickstart
+verified by executing it non-interactively end to end (Spark write → minilake SQL read
+of the same Delta files → Spark read-back)
+
+---
+
 ### 13. **DBFS (Databricks File System)** ✅
 
 **Module:** `minilake/services/dbfs.py`
@@ -684,6 +790,55 @@ HTTP, mirroring the project's "official client is the source of truth" rule)
 
 ---
 
+### 19. **Web UI — Athena-style SQL workspace** ✅
+
+**Module:** `ui/` (Next.js static export), mounted by `minilake/app.py`
+**Served at:** `/ui` — and `/` redirects there
+
+An embedded SQL workspace modelled on the AWS Athena query editor, rendered with
+shadcn/ui. Full documentation in [docs/ui.md](docs/ui.md).
+
+**Key Features:**
+
+- ✅ Multiple query tabs; Monaco editor with SQL completion fed by live Unity
+  Catalog metadata (catalogs → schemas → tables → columns)
+- ✅ Run / run selection (`Ctrl`/`Cmd`+`Enter`), cancel, format, `EXPLAIN`, save
+- ✅ Auto limit for bare `SELECT`s, leaving explicit `LIMIT`s and DDL/DML alone
+- ✅ Virtualized result grid with column types, sort, filter, CSV/JSON download,
+  a chart tab and query stats
+- ✅ Data catalog tree with table details, *Preview table* and *Generate table DDL*,
+  plus create/drop for catalogs, schemas, MANAGED tables and volumes
+- ✅ Saved queries and query history, both server-backed
+- ✅ Warehouses; jobs with create/edit/delete, per-task run detail and run logs;
+  clusters driving the real state machine; secret scopes and keys (never values);
+  a workspace browser over `/Workspace`; file browser; and an admin/settings page
+- ✅ Light / dark / system themes
+- ✅ Monaco is bundled into the image, not loaded from a CDN — the container stays
+  offline-capable
+
+**Packaging:** the export lands in `minilake/ui_static` (both in the image and, via
+the wheel's `force-include`, in a PyPI install), with a fallback to the checkout's
+`ui/out`. If neither is present there is simply no `/ui` mount.
+
+**Limitations:**
+
+- ⚠️ Client-side only — no server rendering, no auth, one user
+- ⚠️ Results are rendered from the INLINE response; a query returning far more rows
+  than the auto limit should be aggregated in SQL first
+- 🚫 **`permissions` and `dbfs` have no UI, deliberately.** Permissions are stored
+  but never enforced (single-user allow-all), so a screen for them would imply
+  access control that does not exist. DBFS shares its on-disk root with the Files
+  API, which the Files page already browses — a second view of the same bytes
+- ⚠️ Job editing covers the task types minilake actually executes (`notebook_task`,
+  `spark_python_task`, `sql_task.file`) and a linear task chain. Real DAGs, and the
+  task types that run `SKIPPED`, still need the SDK
+- ⚠️ Tested at the asset level (`tests/test_ui_assets.py`) plus vitest over the pure
+  helpers; there is no component or end-to-end browser suite
+
+**Status:** ✅ Complete and tested
+
+---
+
 ## Not Implemented (501 Responses)
 
 These APIs are out of scope for MVP and return clear 501 "Not Implemented" errors via the catch-all handler.
@@ -697,7 +852,7 @@ The following 30+ SDK service modules are **not emulated** and return `501 {"err
 | **Billing & Cost** | `billing`, `usage` |
 | **AI & ML** | `ml`, `model_registry`, `vectorsearch`, `feature_store` |
 | **Data Quality** | `dataquality`, `qualitymonitor` |
-| **Advanced Analytics** | `dashboards`, `queries`, `alerts`, `query_history` |
+| **Advanced Analytics** | `dashboards`, `alerts` |
 | **Streaming & Real-time** | `knowledgeassistants`, `aisearch` |
 | **Marketplace** | `marketplace`, `sharing` |
 | **DevOps & Config** | `provisioning`, `settings`, `settingsv2` |

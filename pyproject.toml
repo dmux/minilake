@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "minilake"
-version = "1.6.0"
+version = "1.7.0"
 description = "A local Databricks API emulator backed by DuckDB."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -59,6 +59,13 @@ Changelog = "https://github.com/dmux/minilake/releases"
 # removes mcp.server.fastmcp outright, so it is a rewrite, not a bump.
 mcp = ["mcp>=1.29,<2"]
 
+# Embedded JupyterLab, proxied at /jupyter and framed by the UI's Notebooks page.
+# Optional so a base install stays slim: this pulls in the whole Jupyter stack
+# (jupyter-server, ipykernel, nbformat, ...). No pyspark here on purpose — notebooks
+# reach real Spark through the Jobs API, in the same sibling containers a job uses,
+# so the image never carries a second Spark.
+notebook = ["jupyterlab>=4.2,<5", "databricks-sdk>=0.40"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",
@@ -81,12 +88,22 @@ dev = [
 minilake = "minilake.cli:main"
 
 [tool.hatch.build.targets.wheel]
+# The built web UI is staged into src/minilake/ui_static by `cd ui && pnpm build`
+# (see ui/scripts/stage-export.mjs), so it is inside the package and needs no
+# force-include — which would break the editable install in the Docker image,
+# where ui/ is not part of the build context at all. A wheel built without having
+# built the UI simply has no /ui mount.
 packages = ["src/minilake"]
+# `artifacts` overrides hatchling's default of skipping VCS-ignored files. The
+# export is build output, so it is gitignored — without this the wheel builds
+# happily and silently ships no UI.
+artifacts = ["src/minilake/ui_static/**"]
 
 [tool.hatch.build.targets.sdist]
 # The sdist is what someone builds from, so it carries the source, the docs and the
 # compose files. Agent config and local tooling are not part of that.
 exclude = [
+    "/.agents",
     "/.claude",
     "/.mcp.json",
     "/.github",
@@ -114,6 +131,9 @@ markers = [
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+# Example notebooks are teaching material, not library code: they interleave prose and
+# imports by design, which E402 flags on every cell. Ruff lints .ipynb by default.
+exclude = ["src/minilake/notebooks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

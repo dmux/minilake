@@ -1,10 +1,13 @@
 """Admin endpoints for minilake introspection and control."""
 
 import logging
+import shutil
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from minilake.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +21,6 @@ class HealthResponse(BaseModel):
 class ReadyResponse(BaseModel):
     ready: bool
     message: str
-
-
-class ConfigItem(BaseModel):
-    module: str
-    attribute: str
-    value: Any
-
-
-class ConfigUpdateRequest(BaseModel):
-    """Request body for PUT /_minilake/config"""
-
-    updates: Dict[str, Any]  # {"module.attribute": value, ...}
 
 
 # Global registry of get_state/restore_state/reset functions (populated by services)
@@ -71,12 +62,51 @@ async def ready() -> ReadyResponse:
     return ReadyResponse(ready=True, message="minilake is ready")
 
 
+# Directories under data_dir that `full=True` wipes.
+#
+# `catalogs`, `volumes`, `warehouses` and `scratch` are the ones that make `full`
+# mean anything: no service `reset()` touches them, so a plain reset clears the
+# registries and leaves those bytes behind. `workspace` and `dbfs` are listed too
+# even though workspace.reset()/dbfs.reset() already clear them — those only run for
+# services that are enabled, and MINILAKE_SERVICES can switch them off.
+#
+# Deliberately excluded: `certs` (TLS material, configuration rather than state) and
+# `.ivy2-cache` (a Spark jar cache that costs a network round trip to rebuild and
+# holds no user data).
+_WIPED_ON_FULL_RESET = ("catalogs", "volumes", "warehouses", "workspace", "dbfs", "scratch")
+
+
+def _wipe_data_dirs() -> list[str]:
+    """Delete the on-disk trees holding user content. Returns what was removed.
+
+    Only safe once every service `reset()` has detached its catalogs and the pool
+    has closed its warehouse connections — deleting a database file out from under
+    an open DuckDB handle is what this ordering avoids.
+    """
+    removed = []
+    for name in _WIPED_ON_FULL_RESET:
+        path = settings.data_dir / name
+        if not path.exists():
+            continue
+        try:
+            shutil.rmtree(path)
+            path.mkdir(parents=True, exist_ok=True)
+            removed.append(name)
+        except Exception as e:
+            logger.warning(f"Failed to wipe {path}: {e}")
+    return removed
+
+
 @router.post("/reset")
 async def reset_state(full: bool = False) -> dict[str, str]:
     """Reset all service state.
 
     Args:
-        full: If True, also wipe all warehouse data and reset UC catalog
+        full: If True, also delete the data directories on disk. Without it a
+            per-catalog DuckDB database, a volume's directory and a warehouse's
+            database file all survive the reset, because nothing else deletes
+            them — so recreating a volume by the same name still collides. That
+            is what test isolation wants and what a "start over" does not.
     """
     try:
         # Call reset() on all services
@@ -95,6 +125,11 @@ async def reset_state(full: bool = False) -> dict[str, str]:
         # Reset warehouse connections
         if _duckdb_pool:
             await _duckdb_pool.reset_all()
+
+        if full:
+            removed = _wipe_data_dirs()
+            logger.info(f"Full reset wiped: {', '.join(removed) or 'nothing'}")
+            return {"message": f"State reset successfully, wiped {len(removed)} data directories"}
 
         return {"message": "State reset successfully"}
     except Exception as e:

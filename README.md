@@ -43,6 +43,10 @@ docker compose up -d
 curl http://localhost:8000/_minilake/health
 ```
 
+Then open **<http://localhost:8000/ui/>** for the built-in SQL workspace — an
+Athena-style query editor with a data catalog, saved queries and query history
+([details](https://github.com/dmux/minilake/blob/main/docs/ui.md)).
+
 No account, no API key, no sign-up — and the container image downloads nothing at runtime:
 DuckDB's `delta` extension and the Delta / Unity Catalog Spark jars are baked in at build
 time, so it works air-gapped ([details](https://github.com/dmux/minilake/blob/main/docs/getting-started.md#offline-use)).
@@ -63,6 +67,7 @@ More in [Getting Started](https://github.com/dmux/minilake/blob/main/docs/gettin
 | | |
 |---|---|
 | [Getting Started](https://github.com/dmux/minilake/blob/main/docs/getting-started.md) | Install, first catalog and query, internal endpoints |
+| [Web UI](https://github.com/dmux/minilake/blob/main/docs/ui.md) | The built-in SQL workspace at `/ui` |
 | [Configuration](https://github.com/dmux/minilake/blob/main/docs/configuration.md) | Every environment variable, persistence, HTTPS/TLS |
 | [Databricks SDK](https://github.com/dmux/minilake/blob/main/docs/databricks-sdk.md) | Unity Catalog, warehouses, SQL and jobs from Python |
 | [Terraform & Asset Bundles](https://github.com/dmux/minilake/blob/main/docs/terraform.md) | The provider, and `bundle deploy` / `bundle run` |
@@ -78,8 +83,11 @@ More in [Getting Started](https://github.com/dmux/minilake/blob/main/docs/gettin
 |---|---|---|
 | **Unity Catalog** (catalogs, schemas, tables, volumes) | ✅ Real | Each catalog = its own DuckDB database (`ATTACH`), native `catalog.schema.table` addressing |
 | **EXTERNAL Delta Tables** | ✅ Real | Real Delta files; `INSERT`/`UPDATE`/`DELETE` via a generated Spark job, reads via `delta_scan()` |
-| **SQL Statement Execution** | ✅ Real | Real DuckDB; `JSON_ARRAY`/`ARROW_STREAM`/`CSV`, `INLINE`/`EXTERNAL_LINKS` |
+| **SQL Statement Execution** | ✅ Real | Real DuckDB; `JSON_ARRAY`/`ARROW_STREAM`/`CSV`, `INLINE`/`EXTERNAL_LINKS`; result manifest carries column types |
 | **SQL Warehouses** | ✅ Real | Full CRUD + lifecycle |
+| **Query History** | ✅ Real | `w.query_history.list()` over everything executed, failures included |
+| **Saved Queries** | ✅ Real | `w.queries.*` CRUD with `update_mask` |
+| **Web UI** | ✅ Real | Athena-style SQL workspace at `/ui` — see [Web UI](https://github.com/dmux/minilake/blob/main/docs/ui.md) |
 | **Jobs** | ✅ Real | Sibling Docker container execution (Spark) or subprocess fallback; real DAG scheduling (`depends_on`/`run_if`); `sql_task.file` |
 | **Workspace** | ✅ Real | File-backed notebook/script storage; raw-bytes `workspace-files` sync powers `databricks bundle deploy` / `bundle run` |
 | **DBFS & Files API** | ✅ Real | File-backed storage, chunked upload |

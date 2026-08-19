@@ -1,3 +1,14 @@
+# Build the embedded web UI (Next.js static export). Its `prebuild` step also copies
+# Monaco out of node_modules into public/, so the SQL editor is served by minilake
+# rather than fetched from a CDN at runtime — the image is meant to work offline.
+FROM node:24-slim AS frontend-builder
+WORKDIR /app/ui
+RUN corepack enable
+COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY ui/ ./
+RUN pnpm run build
+
 # Resolve the Delta and Unity Catalog connector jars at build time, using the same Ivy
 # resolver spark-submit uses at runtime, so a job container never needs Maven Central.
 # Reusing spark-submit (rather than curl-ing jars by hand) is deliberate: it writes the
@@ -23,7 +34,6 @@ RUN mkdir -p /opt/ivy/cache /opt/ivy/jars && \
         /tmp/warmup.py && \
     ls /opt/ivy/jars/*.jar > /dev/null
 
-
 FROM python:3.11-slim
 
 WORKDIR /opt/minilake
@@ -38,10 +48,19 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml pyproject.toml
 COPY src/ src/
 COPY README.md README.md
+# Inside the package, not beside it: `app.py` looks for `minilake/ui_static` first,
+# which is also where the wheel's force-include puts it — so the container and a
+# `pip install minilake` resolve the UI the same way.
+COPY --from=frontend-builder /app/ui/out /opt/minilake/src/minilake/ui_static
 
-# Install minilake with the MCP extra. Baked into the image so MINILAKE_MCP=1 is all that's
-# needed to turn the MCP server on; the extra stays optional for PyPI installs.
-RUN pip install --no-cache-dir -e ".[mcp]"
+# Install minilake with the MCP and notebook extras. Both are baked into the image so
+# MINILAKE_MCP=1 is all that's needed to turn the MCP server on and JupyterLab is there
+# by default; the extras stay optional for PyPI installs.
+#
+# The notebook extra brings JupyterLab but deliberately no pyspark: notebooks reach real
+# Spark through the Jobs API, in the same sibling containers a job uses, so the image
+# never carries a second Spark.
+RUN pip install --no-cache-dir -e ".[mcp,notebook]"
 
 # Pre-install DuckDB's `delta` extension. Without this the server downloads it from
 # extensions.duckdb.org on every first boot, into a $HOME path that is not a volume — so it
