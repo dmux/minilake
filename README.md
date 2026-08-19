@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dmux/minilake/blob/main/docs/index.md"><strong>Documentation</strong></a> · <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
+  <a href="https://dmux.github.io/minilake/"><strong>Website</strong></a> · <a href="https://github.com/dmux/minilake/blob/main/docs/index.md">Documentation</a> · <a href="https://github.com/dmux/minilake">GitHub</a> · <a href="https://github.com/dmux/minilake/pkgs/container/minilake">Container Image (GHCR)</a>
 </p>
 
 ---
