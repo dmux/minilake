@@ -8,7 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
-## [1.6.1] — 2026-08-18
+## [1.7.0] — 2026-08-18
 
 The release that gives minilake a face: an embedded web workspace, and a real
 JupyterLab inside the image.
@@ -109,5 +109,5 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
-[1.6.1]: https://github.com/dmux/minilake/compare/v1.6.0...v1.6.1
+[1.7.0]: https://github.com/dmux/minilake/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dmux/minilake/releases/tag/v1.6.0
