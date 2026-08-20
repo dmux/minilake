@@ -13,6 +13,22 @@ python3 -m http.server 4599 --directory site
 # http://localhost:4599
 ```
 
+## Theming
+
+The page ships light and dark. Colours live as CSS custom properties on `:root`;
+dark redefines only the tokens that change, in two places that must stay in
+sync — `@media (prefers-color-scheme:dark)` (guarded so an explicit light choice
+still wins, and the only rule that applies without JS) and `[data-theme="dark"]`
+(what the toggle sets). A script in `<head>` stamps `data-theme` before the
+first paint, so switching never flashes; the choice is kept in `localStorage`
+under `minilake-theme`, and while nothing is stored the OS setting leads.
+
+When adding colour, use a token — a literal hex is only correct for something
+that sits on a permanently dark surface (`.band`, `.cta`, `.window`, and the
+white buttons on them). The architecture diagram is themed the same way: its
+styles live in the main stylesheet under `.arch svg`, not inside the SVG, since
+an inline `<svg><style>` applies to the whole document.
+
 ## Assets
 
 | File | What it is |
