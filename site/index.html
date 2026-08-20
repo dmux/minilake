@@ -15,7 +15,8 @@
 <meta name="twitter:title" content="MiniLake — The Databricks API, running on your laptop" />
 <meta name="twitter:description" content="A local Databricks emulator with real SQL, real Delta Lake and real Spark jobs. No account, no API key, no cloud bill." />
 <meta name="twitter:image" content="https://dmux.github.io/minilake/assets/og.png" />
-<meta name="theme-color" content="#0C2340" />
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#080F1A" media="(prefers-color-scheme: dark)" />
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png" />
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
@@ -23,29 +24,148 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 <style>
-/* ---------- tokens ---------- */
+/* ---------- tokens ----------
+   Light is the base palette; dark redefines only what changes. Anything that
+   always sits on a navy panel (.band, .cta, .window) keeps a literal colour —
+   those surfaces are dark in both themes. */
 :root{
-  --navy:#0C2340;
+  color-scheme:light;
+  --brand-navy:#0C2340;          /* the logo navy: never themed */
+  --navy:#0C2340;                /* heading ink, flips light in dark mode */
   --navy-2:#16345F;
   --blue:#0A55D0;
   --blue-2:#1C64DE;
   --blue-soft:#EAF1FE;
+  --blue-line:#D5E3FC;
+  --btn-top:#1C64DE;             /* the primary button is its own pair: --blue
+                                    goes light in dark mode for link legibility,
+                                    which white text cannot sit on */
+  --btn-bottom:#0A55D0;
   --orange:#F5811F;
   --orange-soft:#FFF1E3;
+  --orange-line:#FBDCBE;
+  --orange-ink:#B45A0B;
   --ink:#0C2340;
-  --muted:#59688233;
   --text-muted:#546279;
+  --text-faint:#6B7B94;         /* small uppercase labels: 4.3:1 on white */
   --line:#E3E9F2;
   --line-soft:#EEF2F8;
+  --line-strong:#CBD7EA;
   --bg:#FFFFFF;
   --bg-alt:#F7F9FD;
+  --surface:#FFFFFF;             /* cards, header, table, arch diagram */
+  --surface-2:#FBFCFF;           /* hover tint, table head, honest cards */
+  --surface-3:#F2F5FA;           /* inline code chips */
+  --hdr-bg:rgba(255,255,255,.82);
+  --panel-line:transparent;      /* navy panels need an edge only in dark */
+  --tab-on:#0C2340;
+  --tab-on-ink:#FFFFFF;
+  --ok-ink:#1F6B45;
+  --ok-bg:#E9F7EF;
+  --ok-line:#CFEBDC;
+  --neutral-ink:#6B7688;
+  --neutral-bg:#F1F4F9;
+  --neutral-line:#E1E7F0;
+  --arch-line:#C4D1E4;
+  --arch-arrow:#9DB2CE;
   --code:#0A1B33;
   --radius:14px;
   --radius-lg:20px;
   --shadow-sm:0 1px 2px rgba(12,35,64,.05), 0 1px 3px rgba(12,35,64,.04);
   --shadow:0 12px 30px -12px rgba(12,35,64,.16), 0 2px 8px rgba(12,35,64,.05);
   --shadow-lg:0 40px 80px -32px rgba(12,35,64,.32);
+  --logo-glow:none;
   --maxw:1160px;
+}
+/* The inline head script stamps data-theme before first paint, so this block
+   only has to cover the no-JS case; [data-theme="light"] must still win. */
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --navy:#DCE7F8;
+    --navy-2:#B9CDE9;
+    --blue:#7CACFF;
+    --blue-2:#9DC2FF;
+    --blue-soft:#132845;
+    --blue-line:#1F3B65;
+    --btn-top:#2F6FE4;
+    --btn-bottom:#1B54C4;
+    --orange:#F79A47;
+    --orange-soft:#3A2411;
+    --orange-line:#5B3A18;
+    --orange-ink:#F0A868;
+    --ink:#E6EDF8;
+    --text-muted:#9BAAC4;
+    --text-faint:#8394AE;
+    --line:#1F2E45;
+    --line-soft:#17243A;
+    --line-strong:#2C3D59;
+    --bg:#080F1A;
+    --bg-alt:#0C1626;
+    --surface:#0F1B2C;
+    --surface-2:#132133;
+    --surface-3:#16243A;
+    --hdr-bg:rgba(8,15,26,.82);
+    --panel-line:#1F2E45;
+    --tab-on:#1E4FA8;
+    --tab-on-ink:#EAF2FF;
+    --ok-ink:#7BE1A6;
+    --ok-bg:#102A1E;
+    --ok-line:#1F4A35;
+    --neutral-ink:#9AA8BE;
+    --neutral-bg:#161F2E;
+    --neutral-line:#26334A;
+    --arch-line:#2C3E5A;
+    --arch-arrow:#4A6086;
+    --code:#060E1A;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --shadow:0 12px 30px -12px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4);
+    --shadow-lg:0 40px 80px -32px rgba(0,0,0,.75);
+    --logo-glow:drop-shadow(0 0 30px rgba(124,172,255,.22));
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --navy:#DCE7F8;
+  --navy-2:#B9CDE9;
+  --blue:#7CACFF;
+  --blue-2:#9DC2FF;
+  --blue-soft:#132845;
+  --blue-line:#1F3B65;
+  --btn-top:#2F6FE4;
+  --btn-bottom:#1B54C4;
+  --orange:#F79A47;
+  --orange-soft:#3A2411;
+  --orange-line:#5B3A18;
+  --orange-ink:#F0A868;
+  --ink:#E6EDF8;
+  --text-muted:#9BAAC4;
+  --text-faint:#8394AE;
+  --line:#1F2E45;
+  --line-soft:#17243A;
+  --line-strong:#2C3D59;
+  --bg:#080F1A;
+  --bg-alt:#0C1626;
+  --surface:#0F1B2C;
+  --surface-2:#132133;
+  --surface-3:#16243A;
+  --hdr-bg:rgba(8,15,26,.82);
+  --panel-line:#1F2E45;
+  --tab-on:#1E4FA8;
+  --tab-on-ink:#EAF2FF;
+  --ok-ink:#7BE1A6;
+  --ok-bg:#102A1E;
+  --ok-line:#1F4A35;
+  --neutral-ink:#9AA8BE;
+  --neutral-bg:#161F2E;
+  --neutral-line:#26334A;
+  --arch-line:#2C3E5A;
+  --arch-arrow:#4A6086;
+  --code:#060E1A;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow:0 12px 30px -12px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4);
+  --shadow-lg:0 40px 80px -32px rgba(0,0,0,.75);
+  --logo-glow:drop-shadow(0 0 30px rgba(124,172,255,.22));
 }
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:88px}
@@ -56,7 +176,7 @@ body{
   font-size:17px;line-height:1.65;letter-spacing:-.01em;
   -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
 }
-img{max-width:100%;display:block}
+img{max-width:100%;height:auto;display:block}
 a{color:var(--blue);text-decoration:none}
 a:hover{color:var(--blue-2)}
 h1,h2,h3,h4{margin:0;line-height:1.15;letter-spacing:-.03em;font-weight:700}
@@ -70,29 +190,35 @@ code,kbd,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Cons
 .alt{background:var(--bg-alt);border-block:1px solid var(--line-soft)}
 
 /* ---------- header ---------- */
-.hdr{position:sticky;top:0;z-index:60;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid transparent;transition:border-color .2s ease, box-shadow .2s ease}
+.hdr{position:sticky;top:0;z-index:60;background:var(--hdr-bg);backdrop-filter:saturate(180%) blur(14px);-webkit-backdrop-filter:saturate(180%) blur(14px);border-bottom:1px solid transparent;transition:border-color .2s ease, box-shadow .2s ease}
 .hdr.is-stuck{border-bottom-color:var(--line);box-shadow:0 1px 0 rgba(12,35,64,.02)}
 .nav{display:flex;align-items:center;gap:28px;height:68px}
-.brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px;color:var(--ink);letter-spacing:-.035em}
+.brand{display:flex;flex:none;align-items:center;gap:11px;font-weight:800;font-size:19px;color:var(--ink);letter-spacing:-.035em}
 .brand:hover{color:var(--ink)}
 .brand img{width:32px;height:32px}
-.brand .v{font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:0;color:var(--blue);background:var(--blue-soft);border:1px solid #D5E3FC;padding:4px 7px;border-radius:999px;margin-left:2px}
+.brand .v{font:500 11px/1 "JetBrains Mono",monospace;letter-spacing:0;color:var(--blue);background:var(--blue-soft);border:1px solid var(--blue-line);padding:4px 7px;border-radius:999px;margin-left:2px}
 .nav-links{display:flex;gap:26px;margin-left:auto;align-items:center}
 .nav-links a{color:var(--text-muted);font-size:15px;font-weight:500}
 .nav-links a:hover{color:var(--ink)}
 .nav-cta{display:flex;align-items:center;gap:10px}
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;flex:none;background:var(--surface);border:1px solid var(--line);border-radius:11px;color:var(--text-muted);cursor:pointer;transition:color .15s ease,border-color .15s ease,background .2s ease}
+.theme-toggle:hover{color:var(--ink);border-color:var(--line-strong)}
+.theme-toggle svg{width:18px;height:18px}
+.theme-toggle .i-moon{display:none}
+[data-theme="dark"] .theme-toggle .i-moon{display:block}
+[data-theme="dark"] .theme-toggle .i-sun{display:none}
 .burger{display:none;margin-left:auto;background:none;border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer;color:var(--ink)}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;gap:9px;font-weight:600;font-size:15px;padding:11px 18px;border-radius:11px;border:1px solid transparent;cursor:pointer;transition:transform .12s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;white-space:nowrap}
 .btn svg{width:17px;height:17px;flex:none}
-.btn-primary{background:linear-gradient(180deg,var(--blue-2),var(--blue));color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.25) inset, 0 8px 20px -8px rgba(10,85,208,.6)}
+.btn-primary{background:linear-gradient(180deg,var(--btn-top),var(--btn-bottom));color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.25) inset, 0 8px 20px -8px rgba(10,85,208,.6)}
 .btn-primary:hover{color:#fff;transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.3) inset, 0 12px 26px -10px rgba(10,85,208,.7)}
-.btn-ghost{background:#fff;border-color:var(--line);color:var(--ink)}
-.btn-ghost:hover{border-color:#CBD7EA;color:var(--ink);transform:translateY(-1px)}
+.btn-ghost{background:var(--surface);border-color:var(--line);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--line-strong);color:var(--ink);transform:translateY(-1px)}
 .btn-lg{font-size:16px;padding:14px 22px;border-radius:12px}
-.btn-dark{background:#fff;color:var(--navy)}
-.btn-dark:hover{color:var(--navy);transform:translateY(-1px)}
+.btn-dark{background:#fff;color:var(--brand-navy)}
+.btn-dark:hover{color:var(--brand-navy);transform:translateY(-1px)}
 .btn-outline-light{border-color:rgba(255,255,255,.28);color:#fff;background:rgba(255,255,255,.06)}
 .btn-outline-light:hover{color:#fff;background:rgba(255,255,255,.12)}
 
@@ -105,21 +231,21 @@ code,kbd,pre{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Cons
 .hero::after{content:"";position:absolute;inset:0;background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(70% 55% at 50% 22%,#000,transparent 75%);mask-image:radial-gradient(70% 55% at 50% 22%,#000,transparent 75%);opacity:.85;pointer-events:none}
 .hero .wrap{position:relative;z-index:1}
 .hero-grid{display:grid;grid-template-columns:minmax(0,1.22fr) minmax(0,.78fr);gap:48px;align-items:center}
-.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--navy-2);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 14px 6px 8px;box-shadow:var(--shadow-sm)}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--navy-2);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 14px 6px 8px;box-shadow:var(--shadow-sm)}
 .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 4px var(--orange-soft)}
-h1{font-size:clamp(38px,4.7vw,56px);font-weight:800;margin:22px 0 0;letter-spacing:-.04em}
+h1{font-size:clamp(32px,5.2vw,56px);font-weight:800;margin:22px 0 0;letter-spacing:-.04em}
 h1 .grad{background:linear-gradient(96deg,var(--blue) 10%,var(--orange) 92%);-webkit-background-clip:text;background-clip:text;color:transparent}
 .lede{margin-top:20px;font-size:19px;color:var(--text-muted);max-width:36em}
 .lede strong{color:var(--ink);font-weight:600}
 .hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
 .hero-note{margin-top:18px;font-size:14px;color:var(--text-muted)}
 .hero-art{display:flex;justify-content:center}
-.hero-art img{width:min(360px,80%);filter:drop-shadow(0 30px 50px rgba(12,35,64,.18))}
+.hero-art img{width:min(360px,80%);filter:drop-shadow(0 30px 50px rgba(12,35,64,.18)) var(--logo-glow)}
 @media (prefers-reduced-motion:no-preference){.hero-art img{animation:float 7s ease-in-out infinite}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
 
 /* ---------- install strip ---------- */
-.install{margin-top:34px;display:grid;gap:10px;max-width:640px}
+.install{margin-top:34px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;max-width:640px}
 .cmd{display:flex;align-items:center;gap:12px;background:var(--code);border-radius:12px;padding:13px 13px 13px 16px;box-shadow:var(--shadow)}
 .cmd code{color:#DCE6F7;font-size:14px;overflow-x:auto;white-space:nowrap;flex:1;min-width:0}
 .cmd .p{color:#5F7CA8;user-select:none}
@@ -130,15 +256,15 @@ h1 .grad{background:linear-gradient(96deg,var(--blue) 10%,var(--orange) 92%);-we
 .copy.done{color:#7BE1A6;border-color:#2C5C42}
 
 /* ---------- trust strip ---------- */
-.trust{border-block:1px solid var(--line-soft);background:linear-gradient(180deg,#fff,#FBFCFF)}
+.trust{border-block:1px solid var(--line-soft);background:linear-gradient(180deg,var(--surface),var(--surface-2))}
 .trust-inner{display:flex;align-items:center;gap:14px 30px;flex-wrap:wrap;padding:22px 0}
-.trust-label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:#8C9AB2}
+.trust-label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--text-faint)}
 .trust-items{display:flex;flex-wrap:wrap;gap:10px 22px}
-.trust-items span{font-size:14.5px;font-weight:600;color:#42536E;display:inline-flex;align-items:center;gap:8px}
-.trust-items span::before{content:"";width:5px;height:5px;border-radius:50%;background:#C3D0E4}
+.trust-items span{font-size:14.5px;font-weight:600;color:var(--navy-2);display:inline-flex;align-items:center;gap:8px}
+.trust-items span::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--line-strong)}
 
 /* ---------- stats ---------- */
-.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:#fff;box-shadow:var(--shadow-sm)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface);box-shadow:var(--shadow-sm)}
 .stat{padding:28px 26px;border-right:1px solid var(--line-soft)}
 .stat:last-child{border-right:0}
 .stat b{display:block;font-size:34px;font-weight:800;letter-spacing:-.04em;color:var(--navy);line-height:1.1}
@@ -149,28 +275,28 @@ h1 .grad{background:linear-gradient(96deg,var(--blue) 10%,var(--orange) 92%);-we
 .head{max-width:760px;margin-bottom:52px}
 .head.center{margin-inline:auto;text-align:center}
 .kicker{font-size:12.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--blue)}
-.head h2{font-size:clamp(30px,3.6vw,42px);margin-top:14px;font-weight:800}
+.head h2{font-size:clamp(26px,3.6vw,42px);margin-top:14px;font-weight:800}
 .head p{margin-top:16px;font-size:18px;color:var(--text-muted)}
 
 /* ---------- feature grid ---------- */
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-.card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px;transition:transform .18s ease,box-shadow .22s ease,border-color .18s ease}
-.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:#D3DFF1}
+.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px;transition:transform .18s ease,box-shadow .22s ease,border-color .18s ease}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:var(--line-strong)}
 .card .ico{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue);margin-bottom:16px}
 .card .ico svg{width:20px;height:20px}
-.card.accent .ico{background:var(--orange-soft);color:#D96C10}
+.card.accent .ico{background:var(--orange-soft);color:var(--orange-ink)}
 .card h3{font-size:17.5px;font-weight:700;letter-spacing:-.02em}
 .card p{margin-top:9px;font-size:15px;color:var(--text-muted);line-height:1.6}
-.card p code{font-size:13px;background:#F2F5FA;border:1px solid var(--line-soft);border-radius:5px;padding:1px 5px;color:var(--navy-2)}
-.tagline{display:inline-block;margin-top:14px;font:600 12px/1 "Inter",sans-serif;color:#2C7A4B;background:#E9F7EF;border:1px solid #CFEBDC;border-radius:999px;padding:5px 10px}
-.tagline.blue{color:var(--blue);background:var(--blue-soft);border-color:#D5E3FC}
-.tagline.orange{color:#B45A0B;background:var(--orange-soft);border-color:#FBDCBE}
+.card p code{font-size:13px;background:var(--surface-3);border:1px solid var(--line-soft);border-radius:5px;padding:1px 5px;color:var(--navy-2)}
+.tagline{display:inline-block;margin-top:14px;font:600 12px/1 "Inter",sans-serif;color:var(--ok-ink);background:var(--ok-bg);border:1px solid var(--ok-line);border-radius:999px;padding:5px 10px}
+.tagline.blue{color:var(--blue);background:var(--blue-soft);border-color:var(--blue-line)}
+.tagline.orange{color:var(--orange-ink);background:var(--orange-soft);border-color:var(--orange-line)}
 
 /* ---------- code tabs ---------- */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
-.tab{background:#fff;border:1px solid var(--line);color:var(--text-muted);font:600 14px/1 "Inter",sans-serif;padding:10px 15px;border-radius:10px;cursor:pointer;transition:.15s ease}
-.tab:hover{color:var(--ink);border-color:#CBD7EA}
-.tab[aria-selected="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.tab{background:var(--surface);border:1px solid var(--line);color:var(--text-muted);font:600 14px/1 "Inter",sans-serif;padding:10px 15px;border-radius:10px;cursor:pointer;transition:.15s ease}
+.tab:hover{color:var(--ink);border-color:var(--line-strong)}
+.tab[aria-selected="true"]{background:var(--tab-on);border-color:var(--tab-on);color:var(--tab-on-ink)}
 .window{background:var(--code);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);overflow:hidden;border:1px solid #16294A}
 .window-bar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #16294A;background:linear-gradient(180deg,#0E2140,#0A1B33)}
 .dots{display:flex;gap:6px}
@@ -186,21 +312,33 @@ pre code{color:inherit}
 .tok-f{color:#8FE1C0}
 .tok-n{color:#C6A9FF}
 .split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:44px;align-items:center}
-.checks{display:grid;gap:14px;margin-top:26px;padding:0;list-style:none}
+.checks{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-top:26px;padding:0;list-style:none}
+.checks code,.card p code,.desc code,.note code,.lede code,.hero-note code{overflow-wrap:anywhere}
 .checks li{display:flex;gap:12px;font-size:15.5px;color:var(--text-muted);line-height:1.55}
 .checks li b{color:var(--ink);font-weight:600}
-.checks svg{width:20px;height:20px;flex:none;color:#2C7A4B;margin-top:1px}
+.checks svg{width:20px;height:20px;flex:none;color:var(--ok-ink);margin-top:1px}
 
 /* ---------- architecture ---------- */
-.arch{border:1px solid var(--line);background:#fff;border-radius:var(--radius-lg);padding:34px 28px;box-shadow:var(--shadow-sm);overflow-x:auto}
+.arch{border:1px solid var(--line);background:var(--surface);border-radius:var(--radius-lg);padding:34px 28px;box-shadow:var(--shadow-sm);overflow-x:auto}
+/* diagram styles live here, not in the SVG: an inline <svg><style> is
+   document-global, and these need to follow the theme */
+.arch svg .lbl{font:600 13px "Inter",sans-serif;fill:var(--ink)}
+.arch svg .sub{font:400 11.5px "Inter",sans-serif;fill:var(--text-muted)}
+.arch svg .wht{font:700 15px "Inter",sans-serif;fill:#fff}
+.arch svg .wsub{font:400 12px "JetBrains Mono",monospace;fill:#9FBBE4}
+.arch svg .chip{font:600 12px "JetBrains Mono",monospace;fill:#DCE7F8}
+.arch svg .cap{font:700 10.5px "Inter",sans-serif;fill:var(--text-faint);letter-spacing:.12em}
+.arch svg .box{fill:var(--surface);stroke:var(--line)}
+.arch svg .line{stroke:var(--arch-line);stroke-width:1.6;fill:none}
+.arch svg #arw path{fill:var(--arch-arrow)}
 .arch svg{min-width:720px;width:100%;height:auto;display:block;margin-inline:auto;max-width:960px}
 
 /* ---------- mcp band ---------- */
-.band{background:linear-gradient(160deg,#0C2340 0%,#12305A 55%,#0A2B63 100%);color:#fff;border-radius:26px;padding:56px;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
+.band{background:linear-gradient(160deg,#0C2340 0%,#12305A 55%,#0A2B63 100%);color:#fff;border:1px solid var(--panel-line);border-radius:26px;padding:56px;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
 .band::after{content:"";position:absolute;inset:auto -80px -140px auto;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(245,129,31,.28),transparent 62%)}
 .band > *{position:relative;z-index:1}
 .band .kicker{color:#FFB36B}
-.band h2{font-size:clamp(28px,3.4vw,40px);font-weight:800;margin-top:14px}
+.band h2{font-size:clamp(25px,3.4vw,40px);font-weight:800;margin-top:14px}
 .band p{color:#B8CBE8;margin-top:16px;font-size:17.5px;max-width:52ch}
 .band-grid{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:44px;align-items:center}
 .tool-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:28px;padding:0;list-style:none}
@@ -209,43 +347,43 @@ pre code{color:inherit}
 .band .window{box-shadow:0 30px 70px -30px rgba(0,0,0,.7)}
 
 /* ---------- table ---------- */
-.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:#fff;box-shadow:var(--shadow-sm)}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-sm)}
 table{border-collapse:collapse;width:100%;min-width:680px;font-size:15px}
 th,td{text-align:left;padding:15px 22px;border-bottom:1px solid var(--line-soft);vertical-align:top}
-thead th{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:#7D8CA5;background:#FAFCFF;font-weight:700}
+thead th{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-faint);background:var(--surface-2);font-weight:700}
 tbody tr:last-child td{border-bottom:0}
-tbody tr:hover{background:#FBFCFF}
+tbody tr:hover{background:var(--surface-2)}
 td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
 td.desc{color:var(--text-muted)}
 .pill{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 "Inter",sans-serif;padding:6px 10px;border-radius:999px;white-space:nowrap}
-.pill.real{color:#1F6B45;background:#E9F7EF;border:1px solid #CFEBDC}
-.pill.partial{color:#B45A0B;background:var(--orange-soft);border:1px solid #FBDCBE}
-.pill.no{color:#6B7688;background:#F1F4F9;border:1px solid #E1E7F0}
+.pill.real{color:var(--ok-ink);background:var(--ok-bg);border:1px solid var(--ok-line)}
+.pill.partial{color:var(--orange-ink);background:var(--orange-soft);border:1px solid var(--orange-line)}
+.pill.no{color:var(--neutral-ink);background:var(--neutral-bg);border:1px solid var(--neutral-line)}
 
 /* ---------- honest ---------- */
 .honest{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-.honest .card{background:#FCFDFF}
+.honest .card{background:var(--surface-2)}
 .honest .card h3{font-size:16.5px}
 .note{margin-top:26px;font-size:15px;color:var(--text-muted);border-left:3px solid var(--orange);padding-left:16px;max-width:70ch}
 
 /* ---------- cta ---------- */
-.cta{background:linear-gradient(150deg,#0C2340,#153A73);color:#fff;border-radius:26px;padding:64px 56px;text-align:center;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
+.cta{background:linear-gradient(150deg,#0C2340,#153A73);color:#fff;border:1px solid var(--panel-line);border-radius:26px;padding:64px 56px;text-align:center;position:relative;overflow:hidden;box-shadow:var(--shadow-lg)}
 .cta::before{content:"";position:absolute;inset:-60% 30% auto 30%;height:420px;background:radial-gradient(circle,rgba(10,85,208,.5),transparent 65%)}
 .cta > *{position:relative;z-index:1}
 .cta img{width:76px;height:76px;margin:0 auto 24px;background:#fff;border-radius:20px;padding:11px;box-shadow:0 14px 34px -12px rgba(0,0,0,.55)}
-.cta h2{font-size:clamp(28px,3.6vw,42px);font-weight:800}
+.cta h2{font-size:clamp(26px,3.6vw,42px);font-weight:800}
 .cta p{color:#B8CBE8;margin-top:16px;font-size:18px;max-width:56ch;margin-inline:auto}
 .cta .hero-actions{justify-content:center;margin-top:30px}
 
 /* ---------- footer ---------- */
 .ftr{border-top:1px solid var(--line);padding:56px 0 44px;background:var(--bg-alt)}
 .ftr-grid{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:36px}
-.ftr h4{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:#7D8CA5;margin-bottom:14px}
-.ftr ul{list-style:none;padding:0;margin:0;display:grid;gap:9px}
+.ftr h4{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);margin-bottom:14px}
+.ftr ul{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
 .ftr a{font-size:15px;color:var(--text-muted)}
 .ftr a:hover{color:var(--blue)}
 .ftr .about{font-size:14.5px;color:var(--text-muted);margin-top:14px;max-width:34ch}
-.ftr-bottom{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:14px;color:#7D8CA5}
+.ftr-bottom{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:14px;color:var(--text-faint)}
 
 /* ---------- reveal (only when JS can undo it) ---------- */
 .js .rv{opacity:0;transform:translateY(14px)}
@@ -253,34 +391,94 @@ td.desc{color:var(--text-muted)}
 @media (prefers-reduced-motion:reduce){.js .rv{opacity:1;transform:none}}
 
 /* ---------- responsive ---------- */
+/* `1fr` is `minmax(auto,1fr)`: a grid item then refuses to shrink below the
+   min-content of a nowrap command line or a <pre>, and the page scrolls
+   sideways. Every single-column fallback below uses minmax(0,1fr). */
+/* the full nav needs ~920px (brand 191 + links 425 + buttons 197 + gutters);
+   it collapses on that measurement, well before the phone breakpoint */
+@media (max-width:960px){
+  .nav{gap:14px}
+  .nav-links{display:none;position:absolute;top:68px;left:0;right:0;background:var(--bg);border-bottom:1px solid var(--line);flex-direction:column;align-items:stretch;gap:0;padding:8px 24px 18px}
+  .nav-links.open{display:flex}
+  .nav-links a{padding:12px 0;border-bottom:1px solid var(--line-soft)}
+  .nav-cta .btn-ghost{display:none}
+  .nav-cta .btn{padding:10px 14px;font-size:14px}
+  .burger{display:inline-flex}
+}
 @media (max-width:1024px){
-  .hero-grid{grid-template-columns:1fr;gap:36px}
+  .hero-grid{grid-template-columns:minmax(0,1fr);gap:36px}
   .hero-art{order:-1}
   .hero-art img{width:190px}
   .grid,.honest{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .split,.band-grid{grid-template-columns:1fr;gap:32px}
+  .split,.band-grid{grid-template-columns:minmax(0,1fr);gap:32px}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .stat:nth-child(2){border-right:0}
   .stat:nth-child(1),.stat:nth-child(2){border-bottom:1px solid var(--line-soft)}
   .band,.cta{padding:40px 28px}
-  .ftr-grid{grid-template-columns:1fr 1fr;gap:28px}
+  .ftr-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:28px}
 }
 @media (max-width:720px){
   body{font-size:16px}
   .section{padding:68px 0}
-  .nav-links{display:none;position:absolute;top:68px;left:0;right:0;background:#fff;border-bottom:1px solid var(--line);flex-direction:column;align-items:stretch;gap:0;padding:8px 24px 18px}
-  .nav-links.open{display:flex}
-  .nav-links a{padding:12px 0;border-bottom:1px solid var(--line-soft)}
-  .nav-cta .btn-ghost{display:none}
-  .burger{display:inline-flex}
-  .grid,.honest,.stats,.tool-list{grid-template-columns:1fr}
-  .stat{border-right:0;border-bottom:1px solid var(--line-soft)}
+  .section--tight{padding:56px 0}
+  .wrap{padding-inline:20px}
+  .nav-links{padding-inline:20px}
+  .grid,.honest,.stats,.tool-list{grid-template-columns:minmax(0,1fr)}
+  .stat{border-right:0;border-bottom:1px solid var(--line-soft);padding:22px 20px}
   .stat:last-child{border-bottom:0}
+  .hero{padding:56px 0}
+  .hero-art img{width:150px}
+  .head{margin-bottom:36px}
+  .lede{font-size:17.5px}
+  .install{margin-top:26px}
+  .cmd{padding:11px 11px 11px 13px;gap:8px}
+  .cmd .tag{display:none}
+  .hero-actions .btn{flex:1 1 auto;justify-content:center}
   pre{font-size:12.6px;padding:18px}
-  .ftr-grid{grid-template-columns:1fr}
+  .band,.cta{padding:32px 22px;border-radius:20px}
+  .cta{padding-block:44px}
+  .arch{padding:22px 16px}
+  /* the coverage table becomes stacked cards rather than a 680px side-scroller */
+  .table-wrap{overflow-x:visible}
+  table{min-width:0;display:block;font-size:15px}
+  thead{display:none}
+  tbody,tr,td{display:block}
+  tr{padding:18px 20px;border-bottom:1px solid var(--line-soft)}
+  tbody tr:last-child{border-bottom:0}
+  th,td{padding:0;border-bottom:0}
+  td:first-child{white-space:normal;font-size:16px}
+  td:nth-child(2){margin:9px 0 10px}
+  td.desc{font-size:14.5px;line-height:1.55}
+  .ftr{padding:44px 0 36px}
+  .ftr-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:28px 20px}
+  .ftr-grid > div:first-child{grid-column:1 / -1}
+}
+@media (max-width:460px){
+  /* the nav carries brand + theme + GitHub + burger: below this it only fits
+     once the version pill and the button label step aside */
+  .nav{gap:10px}
+  .brand{font-size:17px}
+  .brand .v{display:none}
+  .nav-cta .btn{padding:9px 11px}
+  .nav-cta .btn-primary .btn-label{display:none}
+  .nav-cta .btn svg{margin-inline:1px}
+  .theme-toggle{width:34px;height:34px}
+  .burger{padding:7px}
 }
 </style>
-<script>document.documentElement.className += " js";</script>
+<script>
+/* Runs before first paint: stamps the resolved theme so nothing flashes, and
+   marks JS as available for the reveal-on-scroll styles. */
+(function () {
+  var root = document.documentElement;
+  root.className += " js";
+  var saved = null;
+  try { saved = localStorage.getItem("minilake-theme"); } catch (e) {}
+  var dark = saved ? saved === "dark"
+                   : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  root.setAttribute("data-theme", dark ? "dark" : "light");
+})();
+</script>
 </head>
 <body>
 
@@ -295,10 +493,14 @@ td.desc{color:var(--text-muted)}
       <a href="#coverage">Coverage</a>
     </nav>
     <div class="nav-cta">
+      <button class="theme-toggle" id="theme" type="button" aria-label="Switch theme" title="Switch theme">
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.4v2.2M12 19.4v2.2M4.2 12H2M22 12h-2.2M5.6 5.6 4 4M20 20l-1.6-1.6M18.4 5.6 20 4M4 20l1.6-1.6"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a8.6 8.6 0 1 0 11.1 11.1Z"/></svg>
+      </button>
       <a class="btn btn-ghost" href="https://github.com/dmux/minilake/blob/main/docs/index.md">Docs</a>
       <a class="btn btn-primary" href="https://github.com/dmux/minilake">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.6 5.6.6 11.9c0 5 3.3 9.3 7.8 10.8.6.1.8-.2.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.7.2 2.9.1 3.2.8.9 1.2 1.9 1.2 3.2 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6a11.4 11.4 0 0 0 7.8-10.8C23.4 5.6 18.3.5 12 .5Z"/></svg>
-        GitHub
+        <span class="btn-label">GitHub</span>
       </a>
     </div>
     <button class="burger" id="burger" aria-label="Menu" aria-expanded="false">
@@ -669,16 +871,6 @@ curl -X POST http://localhost:8000/_minilake/reset</code></pre>
           <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0 10 5 0 10z" fill="#9DB2CE"/>
           </marker>
-          <style>
-            .lbl{font:600 13px "Inter",sans-serif;fill:#0C2340}
-            .sub{font:400 11.5px "Inter",sans-serif;fill:#6B7B94}
-            .wht{font:700 15px "Inter",sans-serif;fill:#fff}
-            .wsub{font:400 12px "JetBrains Mono",monospace;fill:#9FBBE4}
-            .chip{font:600 12px "JetBrains Mono",monospace;fill:#DCE7F8}
-            .cap{font:700 10.5px "Inter",sans-serif;fill:#8C9AB2;letter-spacing:.12em}
-            .box{fill:#fff;stroke:#DCE4F0}
-            .line{stroke:#C4D1E4;stroke-width:1.6;fill:none}
-          </style>
         </defs>
 
         <text class="cap" x="24" y="26">CLIENTS</text>
@@ -935,6 +1127,32 @@ MINILAKE_MCP=1 minilake --port 8000</code></pre>
   var onScroll = function () { hdr.classList.toggle("is-stuck", window.scrollY > 8); };
   onScroll();
   window.addEventListener("scroll", onScroll, { passive: true });
+
+  /* theme toggle — an explicit choice is remembered; otherwise the OS leads */
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("theme");
+  var media = window.matchMedia("(prefers-color-scheme: dark)");
+  var stored = null;
+  try { stored = localStorage.getItem("minilake-theme"); } catch (e) {}
+  var label = function () {
+    var dark = root.getAttribute("data-theme") === "dark";
+    var text = dark ? "Switch to light theme" : "Switch to dark theme";
+    themeBtn.setAttribute("aria-label", text);
+    themeBtn.setAttribute("title", text);
+  };
+  label();
+  themeBtn.addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    stored = next;
+    try { localStorage.setItem("minilake-theme", next); } catch (e) {}
+    label();
+  });
+  media.addEventListener("change", function (e) {
+    if (stored) return;                        /* the user's own pick wins */
+    root.setAttribute("data-theme", e.matches ? "dark" : "light");
+    label();
+  });
 
   /* mobile nav */
   var burger = document.getElementById("burger");
