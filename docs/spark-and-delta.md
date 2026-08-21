@@ -131,13 +131,36 @@ data in and out, by path is fewer moving parts.
 
 ## JupyterLab
 
-An optional profile shares minilake's data volume and comes preconfigured with PySpark and
-Delta:
+minilake runs a JupyterLab of its own, as a child process, reverse-proxied at `/jupyter` and
+framed by the UI at `/ui/notebooks`. Two notebooks are seeded into the notebook directory on
+first start; both reach the minilake that launched them at `http://localhost:8000`.
+
+`minilake_quickstart.ipynb` registers an EXTERNAL Delta table, writes to it with real Spark,
+and reads the same rows back through minilake's SQL API — the same loop as above,
+interactively.
+
+`minilake_delta_optimize_vacuum.ipynb` takes that further into Delta operations: fifty
+micro-batch appends to manufacture a small-files problem, `OPTIMIZE` (including `ZORDER BY`)
+to compact it, and `VACUUM` to reclaim the tombstoned files. Every measurement — file
+counts, and a replay of the `_delta_log` itself — runs through minilake's SQL API, so the
+effect of each Delta operation is visible from the Databricks side. `OPTIMIZE`, `VACUUM`,
+`DESCRIBE HISTORY` and `VERSION AS OF` are Delta protocol operations and run in Spark; they
+are not part of minilake's DuckDB SQL dialect, and the notebook says so rather than hiding
+it.
+
+**The kernel has no `pyspark`, deliberately** — the image carries no second Spark. Both
+notebooks submit their Spark work through the Jobs API, into the same sibling containers a
+job task uses, with the `run_python_script` helper from the recipe above. A bare
+`SparkSession` in a cell will fail, and `pip install delta` installs an unrelated PyPI
+package that will not fix it.
+
+For a kernel that *does* hold a local `SparkSession`, there is an optional profile with
+PySpark and `delta-spark` preinstalled, sharing the same data volume:
 
 ```bash
 docker compose --profile notebook up -d
-# http://localhost:8888 — a quickstart notebook is pre-loaded
+# http://localhost:8888 — everything under notebooks/ is pre-loaded
 ```
 
-The notebook registers an EXTERNAL Delta table, writes to it with real PySpark, and reads
-the same rows back through minilake's SQL API — the same loop as above, interactively.
+There it is `minilake_delta_quickstart.ipynb`, and minilake is at `http://minilake:8000`
+rather than localhost, because the notebook runs in its own container.
