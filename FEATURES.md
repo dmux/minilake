@@ -545,7 +545,7 @@ after each item, run via
 
 ### 12. **Notebook Service — JupyterLab + Real PySpark + Delta Lake** ✅
 
-**Files:** `Dockerfile.notebook`, `docker-compose.yml` (`jupyter` service, `notebook` profile), `notebooks/minilake_delta_quickstart.ipynb`
+**Files:** `Dockerfile.notebook`, `docker-compose.yml` (`jupyter` service, `notebook` profile), `notebooks/` (every `.ipynb` there is copied into the image)
 
 An optional, real JupyterLab environment for interactively testing PySpark + Delta Lake code against minilake — not started by default.
 
@@ -568,7 +568,7 @@ docker compose --profile notebook up -d
 - `jupyter/pyspark-notebook:spark-3.5.0` + `delta-spark==3.1.0` (versions must match — Delta Lake pins to specific Spark minor versions)
 - No token/password on the Jupyter server — a local-dev-only convenience, not for exposing beyond your own machine
 
-**Status:** ✅ Complete — verified by non-interactively executing the full quickstart notebook (`jupyter nbconvert --execute`)
+**Status:** ✅ Complete — verified by executing the notebook non-interactively (`jupyter nbconvert --execute`)
 
 ---
 
@@ -594,7 +594,7 @@ minilake's own origin. On by default; `MINILAKE_NOTEBOOK=0` turns it off.
 - ✅ **No second Spark in the image.** Notebooks reach real Spark through the Jobs API,
   in the same sibling containers a job uses. The bundled quickstart carries the helper
   that stages a script, runs it and returns its output — the `run_python_script` recipe
-- ✅ **Seeded quickstart** (`minilake/notebooks/`), copied into the notebook directory
+- ✅ **Seeded notebooks** (`minilake/notebooks/`), copied into the notebook directory
   once and never overwritten afterwards, so edits survive an upgrade
 - ✅ `MINILAKE_HOST` / `MINILAKE_DATA_DIR` injected into the kernel environment, so a
   notebook never hardcodes a port
@@ -610,9 +610,22 @@ minilake's own origin. On by default; `MINILAKE_NOTEBOOK=0` turns it off.
   Jobs API instead. The separate `--profile notebook` container remains for anyone who
   wants a local `SparkSession`
 
-**Status:** ✅ Complete and tested — `tests/test_notebook.py`, plus the quickstart
-verified by executing it non-interactively end to end (Spark write → minilake SQL read
-of the same Delta files → Spark read-back)
+**Seeded notebooks:**
+
+1. `minilake_quickstart.ipynb` — Spark write → minilake SQL read of the same Delta files →
+   Spark read-back, with the `run_python_script` helper the rest builds on
+2. `minilake_delta_optimize_vacuum.ipynb` — Delta table maintenance: fifty micro-batch
+   appends produce 200 tiny Parquet files, `OPTIMIZE` (and `OPTIMIZE ... WHERE ... ZORDER BY`)
+   compacts them to four, and `VACUUM` deletes the 201 tombstoned ones. Every step is
+   measured through the SQL Statement Execution API — `glob()` for what is on disk, and a
+   SQL replay of the `_delta_log` (`add` paths minus `remove` paths) for what is live, which
+   is what makes the "files on disk go *up* after `OPTIMIZE`" step visible. `OPTIMIZE`,
+   `VACUUM`, `DESCRIBE HISTORY` and time travel are Delta *protocol* operations, so they run
+   in Spark through the Jobs API — they are not in minilake's DuckDB dialect (see section
+   4), and the notebook makes that boundary explicit rather than papering over it
+
+**Status:** ✅ Complete and tested — `tests/test_notebook.py`, plus both seeded notebooks
+verified by executing them non-interactively end to end
 
 ---
 

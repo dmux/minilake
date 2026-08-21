@@ -16,7 +16,7 @@ builder = SparkSession.builder.appName('warmup') \
 spark = configure_spark_with_delta_pip(builder).getOrCreate(); \
 spark.stop()"
 
-COPY notebooks/minilake_delta_quickstart.ipynb /home/${NB_USER}/work/minilake_delta_quickstart.ipynb
-RUN chown ${NB_UID}:${NB_GID} /home/${NB_USER}/work/minilake_delta_quickstart.ipynb
+COPY notebooks/ /home/${NB_USER}/work/
+RUN chown -R ${NB_UID}:${NB_GID} /home/${NB_USER}/work
 
 USER ${NB_UID}
