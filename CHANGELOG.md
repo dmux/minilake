@@ -8,6 +8,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.2] — 2026-08-21
+
+Dependency fix. No behaviour changes.
+
+### Added
+
+- **`pytz` is now a declared runtime dependency.** minilake's own modules use the
+  standard library (`datetime.timezone` in `tls.py`, `services/files.py`,
+  `services/saved_queries.py`), but code running against an install — notebooks and
+  scripts handling timezone-aware data — reaches for `pytz`, which nothing in the
+  dependency tree pulled in, so it simply was not there. `pip install minilake` now
+  brings it.
+
+  Note this covers the Python environment minilake itself is installed into. Job and
+  notebook containers run from their own images (`MINILAKE_SPARK_IMAGE` and
+  `Dockerfile.notebook`) and do not install the wheel, so they are unaffected.
+
 ## [1.7.1] — 2026-08-18
 
 Packaging fix. No runtime changes: the 1.7.0 wheel on PyPI is complete and correct,
@@ -134,6 +151,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.2]: https://github.com/dmux/minilake/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/dmux/minilake/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dmux/minilake/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dmux/minilake/releases/tag/v1.6.0
