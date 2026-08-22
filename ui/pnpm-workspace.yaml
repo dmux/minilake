@@ -1,3 +1,15 @@
 ignoredBuiltDependencies:
   - sharp
   - unrs-resolver
+
+# monaco-editor pins `dompurify` to an exact version (3.4.8 as of 0.56.0), which is
+# behind four DOMPurify advisories — GHSA-cmwh-pvxp-8882, GHSA-55q2-fjhq-7xh7,
+# GHSA-vxr8-fq34-vvx9, GHSA-c2j3-45gr-mqc4 — all fixed in 3.4.13. There is no newer
+# monaco to upgrade to, so the transitive pin is lifted here instead.
+#
+# Note this only cleans the dependency graph: monaco does not import the npm package
+# at runtime, it vendors its own copy of DOMPurify under
+# esm/vs/base/browser/dompurify/, which is what ends up in the AMD bundle we serve
+# from public/monaco. Re-check that vendored copy when bumping monaco-editor.
+overrides:
+  dompurify: ^3.4.14
