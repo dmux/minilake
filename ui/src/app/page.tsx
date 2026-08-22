@@ -11,6 +11,7 @@ import { SqlEditor } from "@/components/editor/sql-editor";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { ResultsPanel } from "@/components/results/results-panel";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { useIsMounted } from "@/hooks/use-is-mounted";
 import { useQueryExecution } from "@/hooks/use-query-execution";
 import type { Table as TableModel } from "@/lib/api/types";
 import { previewStatement, tableRef } from "@/lib/sql-identifier";
@@ -22,23 +23,30 @@ export default function QueryEditorPage() {
   const results = useEditorTabsStore((s) => s.results);
   const addTab = useEditorTabsStore((s) => s.addTab);
   const updateTab = useEditorTabsStore((s) => s.updateTab);
-  const hydrated = useEditorTabsStore((s) => s.hydrated);
 
+  // False for the prerender and the first client render, true from the render
+  // after hydration. Both things below need it: see the effect, and the fact that
+  // the static export ships the `Loading…` branch in its HTML, so painting
+  // restored tabs any earlier would be a hydration mismatch.
+  const mounted = useIsMounted();
   const { run, cancel } = useQueryExecution();
   const [ddlTable, setDdlTable] = useState<TableModel | null>(null);
 
-  // The editor always needs one tab to write into. Gated on `hydrated`, because
-  // zustand reads localStorage after the first render — without the gate every
-  // reload adds an empty tab beside the restored ones.
+  // The editor always needs one tab to write into — but only once we are reading
+  // the browser's tab list. `persist` reads localStorage at module load, yet zustand
+  // feeds React `getInitialState()` as the server snapshot, which `persist` pins to
+  // the *pre*-hydration state: the hydration render and the effect that follows it
+  // see an empty list even when tabs were restored. Without the `mounted` gate every
+  // reload adds a blank tab beside the restored ones.
   useEffect(() => {
-    if (hydrated && tabs.length === 0) addTab();
-  }, [hydrated, tabs.length, addTab]);
+    if (mounted && tabs.length === 0) addTab();
+  }, [mounted, tabs.length, addTab]);
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
   const activeResult = activeTab ? results[activeTab.id] : undefined;
   const isRunning = activeResult?.status === "running";
 
-  if (!activeTab) {
+  if (!mounted || !activeTab) {
     return (
       <WorkspaceShell title="Query editor">
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">Loading…</div>
