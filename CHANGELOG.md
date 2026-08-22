@@ -8,6 +8,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.3] — 2026-08-21
+
+Fixes and maintenance. No API changes.
+
+### Fixed
+
+- **The Query editor could hang on "Loading…" forever.** The page gated its first
+  tab on a `hydrated` flag set from zustand persist's `onRehydrateStorage`, which
+  with synchronous `localStorage` runs inside `create()` — while the store binding
+  is still in its temporal dead zone. zustand swallowed the resulting
+  `ReferenceError`, so the flag never flipped and nothing was logged. Anyone with
+  no persisted tabs — a fresh browser, cleared site data, or having just closed
+  the last tab — got a blank page that a reload could not fix. The signal now
+  comes from React (`useIsMounted`), which cannot get stuck and also makes the
+  first client render agree with the static export's markup.
+- **`MINILAKE_MCP=1` printed a pydantic-settings warning on startup.** FastMCP's
+  own `Settings` annotates `lifespan` with a forward reference to `FastMCP`, which
+  is defined further down the same module, so pydantic-settings >= 2.15 warned
+  about the unresolved reference on every instantiation. The model is now rebuilt
+  once the SDK module is fully imported.
+
+### Changed
+
+- **minilake now runs on Python 3.14** in its images and CI, up from 3.11, which
+  left bugfix support in April 2024. `requires-python` stays at `>=3.11`: this
+  changes what minilake runs on, not what it can be installed into.
+- **Web UI dependencies updated** — Next 16.3.2, recharts 3.10.1, lucide-react
+  1.33, shadcn 4.19, TypeScript 6 — and the transitive `dompurify` pin lifted to
+  3.4.14, clearing four DOMPurify advisories reported against the lockfile. Note
+  monaco-editor vendors its own copy of DOMPurify into the bundle actually served,
+  and never calls the APIs those advisories hinge on.
+- **Python dependencies updated** — twenty patch/minor moves, notably
+  databricks-sdk 0.133.0, starlette 1.6.0, uvicorn 0.52.4 and deltalake 1.6.3.
+
 ## [1.7.2] — 2026-08-21
 
 Dependency fix. No behaviour changes.
@@ -151,6 +185,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.3]: https://github.com/dmux/minilake/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/dmux/minilake/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/dmux/minilake/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dmux/minilake/compare/v1.6.0...v1.7.0
