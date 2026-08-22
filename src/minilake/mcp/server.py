@@ -69,10 +69,19 @@ def build_mcp_server(app: FastAPI) -> tuple["FastMCP", "MinilakeClient"]:
     import importlib
 
     from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp.server import Settings
     from mcp.server.transport_security import TransportSecuritySettings
 
     from minilake.mcp import prompts, resources
     from minilake.mcp.client import MinilakeClient
+
+    # FastMCP's own `Settings` annotates `lifespan` with a forward reference to `FastMCP`,
+    # which is defined further down the same module and so is still unresolved when the
+    # model is built. pydantic-settings >= 2.15 warns about that on every instantiation
+    # (`IncompleteFieldDefinitionWarning`), which lands in the user's terminal on startup.
+    # Rebuilding here — after the module is fully imported, which is exactly what the
+    # warning asks for — resolves the reference. Harmless if a future SDK does it itself.
+    Settings.model_rebuild()
 
     client = MinilakeClient(app)
 

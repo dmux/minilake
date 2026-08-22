@@ -31,14 +31,6 @@ interface EditorTabsState {
   tabs: QueryTab[];
   activeTabId: string | null;
   results: Record<string, TabResult>;
-  /**
-   * False until `persist` has read localStorage.
-   *
-   * Rehydration happens after the first render, so a component that checks
-   * `tabs.length === 0` before this flips would see an empty list and open a
-   * fresh tab on every reload, next to the restored ones.
-   */
-  hydrated: boolean;
 
   addTab: (tab?: Partial<QueryTab>) => string;
   closeTab: (id: string) => void;
@@ -67,7 +59,6 @@ export const useEditorTabsStore = create<EditorTabsState>()(
       tabs: [],
       activeTabId: null,
       results: {},
-      hydrated: false,
 
       addTab: (tab) => {
         const id = tab?.id ?? newId();
@@ -119,11 +110,16 @@ export const useEditorTabsStore = create<EditorTabsState>()(
     {
       name: "minilake.editor-tabs",
       partialize: (state) => ({ tabs: state.tabs, activeTabId: state.activeTabId }),
-      // Fires whether or not anything was stored, and on a read failure too — so a
-      // browser with storage blocked still ends up with a usable editor.
-      onRehydrateStorage: () => () => {
-        useEditorTabsStore.setState({ hydrated: true });
-      },
+      // No `onRehydrateStorage` hook, deliberately. With a synchronous storage
+      // `persist` rehydrates inside `create()`, so a callback here would run while
+      // the `useEditorTabsStore` binding is still in its temporal dead zone — the
+      // ReferenceError is swallowed by zustand's own catch, and a `set()` from
+      // there would be discarded anyway when the store installs its initial state.
+      // A "have we loaded yet?" flag built on it silently stays false forever.
+      //
+      // Components that need that distinction take it from the React side instead
+      // (`useIsMounted`), which is also what keeps the static export's markup and
+      // the hydration render in agreement.
     },
   ),
 );

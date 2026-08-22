@@ -34,7 +34,7 @@ RUN mkdir -p /opt/ivy/cache /opt/ivy/jars && \
         /tmp/warmup.py && \
     ls /opt/ivy/jars/*.jar > /dev/null
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 WORKDIR /opt/minilake
 
