@@ -1390,6 +1390,7 @@ dependencies = [
     { name = "docker" },
     { name = "duckdb" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -1411,7 +1412,6 @@ notebook = [
 dev = [
     { name = "databricks-sdk" },
     { name = "deltalake" },
-    { name = "httpx" },
     { name = "mcp" },
     { name = "pandas" },
     { name = "pre-commit" },
@@ -1430,6 +1430,7 @@ requires-dist = [
     { name = "docker", specifier = ">=7.1" },
     { name = "duckdb", specifier = ">=1.0" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "jupyterlab", marker = "extra == 'notebook'", specifier = ">=4.2,<5" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.29,<2" },
     { name = "pyarrow", specifier = ">=14.0" },
@@ -1445,7 +1446,6 @@ provides-extras = ["mcp", "notebook"]
 dev = [
     { name = "databricks-sdk", specifier = ">=0.40" },
     { name = "deltalake", specifier = ">=0.19" },
-    { name = "httpx", specifier = ">=0.27" },
     { name = "mcp", specifier = ">=1.29,<2" },
     { name = "pandas", specifier = ">=2.0" },
     { name = "pre-commit", specifier = ">=3.8" },
