@@ -8,6 +8,29 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.4] — 2026-08-31
+
+Dependency fix and maintenance. No API changes.
+
+### Fixed
+
+- **`pip install minilake` / `uv add minilake` crashed on startup with
+  `ModuleNotFoundError: No module named 'httpx'`.** httpx is imported
+  unconditionally at runtime — by the JupyterLab reverse proxy (`notebook.py`)
+  and the MCP ASGI client (`mcp/client.py`), and `app.py` imports `notebook.py`
+  at module top level — but it was only declared in `[dependency-groups].dev`,
+  which pip and `uv add` never install. This regressed in 1.6.1, when the
+  notebook proxy landed; before that httpx was test-only. The Docker image and
+  `minilake[mcp]` were unaffected because the `mcp` package pulls httpx
+  transitively. httpx is now a first-class entry in `[project.dependencies]`.
+
+### Changed
+
+- **Python dependencies updated** — 18 patch/minor moves via `uv lock --upgrade`,
+  notably cryptography 50.0.1, pydantic 2.13.5, mcp 1.29.1 (still pinned `<2`),
+  websockets 17.1, and the Jupyter stack (jupyter-server 2.21.0, jupyter-client
+  8.10.0, ipython 9.17.0).
+
 ## [1.7.3] — 2026-08-21
 
 Fixes and maintenance. No API changes.
@@ -185,6 +208,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.4]: https://github.com/dmux/minilake/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/dmux/minilake/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/dmux/minilake/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/dmux/minilake/compare/v1.7.0...v1.7.1
