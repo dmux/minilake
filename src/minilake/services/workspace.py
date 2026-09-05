@@ -122,12 +122,20 @@ def resolve_workspace_path(path: str) -> Path:
 
 @router.post("/workspace/import")
 async def import_object(req: ImportWorkspaceRequest) -> dict:
-    """Import a notebook/file into the workspace (SOURCE format, PYTHON only)."""
+    """Import a notebook/file into the workspace (SOURCE format, PYTHON only).
+
+    AUTO is accepted as an alias for SOURCE: the real API infers the format
+    from the path/content when the caller doesn't pin one down, and the VS
+    Code extension's "New Notebook"/"New File" actions always send
+    `format: "AUTO"` unconditionally — rejecting it broke workspace item
+    creation outright. Since minilake only ever stores plain Python source
+    either way, treating the two the same is exact, not just a shortcut.
+    """
     fmt = req.format or ImportFormat.SOURCE
-    if fmt != ImportFormat.SOURCE:
+    if fmt not in (ImportFormat.SOURCE, ImportFormat.AUTO):
         raise DatabricksError(
             error_code="NOT_IMPLEMENTED",
-            message=f"Import format '{fmt.value}' is not implemented (only SOURCE is supported)",
+            message=f"Import format '{fmt.value}' is not implemented (only SOURCE/AUTO are supported)",
             status_code=501,
         )
     if req.language is not None and req.language != Language.PYTHON:
