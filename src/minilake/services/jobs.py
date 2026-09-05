@@ -12,7 +12,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from minilake import docker_executor
 from minilake.errors import DatabricksError
@@ -62,6 +62,23 @@ def _next_run_id() -> int:
     run_id = _state["next_run_id"]
     _state["next_run_id"] += 1
     return run_id
+
+
+def _run_page_url(request: Request, job_id: Optional[int], run_id: int) -> str:
+    """Build a run_page_url for a run.
+
+    The real Jobs API always populates this field on `runs/get`/`runs/list`
+    responses, and the Databricks CLI relies on it: it prints `Run URL: %s`
+    from this field, and both `bundle run`'s log tailer and the VS Code
+    extension's Bundle Resource Explorer parse a run id out of that printed
+    URL (regex `/runs?/(\d+)/`) to start polling `runs/get`. Leaving it unset
+    means the CLI never finds a run id to poll, and the extension's run
+    status monitor sits at "unknown" until its 60s watchdog trips and shows
+    "Timeout while fetching run status" — even though the run itself already
+    finished successfully.
+    """
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/#job/{job_id}/run/{run_id}"
 
 
 def _params_to_argv(
@@ -529,7 +546,7 @@ async def run_now(req: RunNowRequest) -> RunNowResponse:
 
 
 @router.get("/runs/get", response_model=RunInfo)
-async def get_run(run_id: int = Query(...)) -> RunInfo:
+async def get_run(request: Request, run_id: int = Query(...)) -> RunInfo:
     """Get a run's current status and task results."""
     if run_id not in _state["runs"]:
         raise DatabricksError(
@@ -546,11 +563,13 @@ async def get_run(run_id: int = Query(...)) -> RunInfo:
         start_time=run.get("start_time"),
         end_time=run.get("end_time"),
         tasks=[RunTaskInfo(**t) for t in run.get("tasks", [])],
+        run_page_url=_run_page_url(request, run["job_id"], run["run_id"]),
     )
 
 
 @router.get("/runs/list", response_model=ListRunsResponse)
 async def list_runs(
+    request: Request,
     job_id: Optional[int] = Query(None),
     active_only: Optional[bool] = Query(None),
     completed_only: Optional[bool] = Query(None),
@@ -575,6 +594,7 @@ async def list_runs(
                 start_time=run.get("start_time"),
                 end_time=run.get("end_time"),
                 tasks=[RunTaskInfo(**t) for t in run.get("tasks", [])],
+                run_page_url=_run_page_url(request, run["job_id"], run["run_id"]),
             )
         )
     return ListRunsResponse(runs=runs, has_more=False)
