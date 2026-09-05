@@ -17,6 +17,7 @@ from fastapi import APIRouter, Query, Request, Response
 
 from minilake.config import settings
 from minilake.errors import DatabricksError
+from minilake.services.identity import USER_NAME
 from minilake.models.workspace import (
     DeleteWorkspaceRequest,
     ExportResponse,
@@ -73,6 +74,41 @@ def _next_id() -> int:
     obj_id = _state["next_id"]
     _state["next_id"] += 1
     return obj_id
+
+
+def _directory_object_id(normalized: str) -> int:
+    """Get (lazily assigning and caching) a directory's object_id.
+
+    Files get an object_id from the import/create call that first writes
+    them into `_state["objects"]`. Directories are never explicitly
+    "created" that way — they come into being as a side effect of an
+    import's `mkdir(parents=True)` or a `workspace/mkdirs` call — so this
+    assigns one the first time a directory is addressed by get-status/list
+    and remembers it for next time. The Databricks CLI/SDK (and the VS Code
+    extension) require every workspace object, directories included, to
+    carry an object_id; the real API never omits it.
+    """
+    entry = _state["objects"].setdefault(normalized, {})
+    if "object_id" not in entry:
+        entry["object_id"] = _next_id()
+    return entry["object_id"]
+
+
+def ensure_user_home() -> None:
+    """Create the implicit user's home directory, `/Users/<user>`.
+
+    A real Databricks workspace always has this directory the moment the
+    user exists — nothing has to be deployed into it first. minilake never
+    created it on its own (only `/Workspace/Users/<user>/...` comes into
+    being, as a side effect of a bundle deploy importing files there), so
+    `/Users/<user>` 404s until something happens to touch it. The VS Code
+    extension's Workspace File System browses from exactly that path and
+    has no 404 fallback, so it fails outright with "Can't fetch details for
+    /Users/<user>". Called once from the app startup lifespan; idempotent
+    (`mkdir(exist_ok=True)`), so it's harmless to call again on every boot,
+    including against the persisted `minilake_data` volume.
+    """
+    _resolve(f"/Users/{USER_NAME}").mkdir(parents=True, exist_ok=True)
 
 
 def resolve_workspace_path(path: str) -> Path:
@@ -246,7 +282,11 @@ async def get_status(path: str = Query(...)) -> ObjectInfo:
         )
 
     if file_path.is_dir():
-        return ObjectInfo(object_type=ObjectType.DIRECTORY, path=normalized)
+        return ObjectInfo(
+            object_type=ObjectType.DIRECTORY,
+            path=normalized,
+            object_id=_directory_object_id(normalized),
+        )
 
     meta = _state["objects"].get(normalized, {})
     obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))
@@ -284,7 +324,13 @@ async def list_objects(path: str = Query(...)) -> ListWorkspaceResponse:
     for child in sorted(dir_path.iterdir()):
         child_path = f"{normalized.rstrip('/')}/{child.name}"
         if child.is_dir():
-            objects.append(ObjectInfo(object_type=ObjectType.DIRECTORY, path=child_path))
+            objects.append(
+                ObjectInfo(
+                    object_type=ObjectType.DIRECTORY,
+                    path=child_path,
+                    object_id=_directory_object_id(child_path),
+                )
+            )
         else:
             meta = _state["objects"].get(child_path, {})
             obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))
