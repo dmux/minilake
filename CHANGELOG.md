@@ -8,6 +8,48 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.5] — 2026-09-05
+
+Fixes four Workspace/Jobs API gaps that broke the Databricks VS Code extension
+(login, Bundle Resource Explorer, and the Workspace File System browser) and
+`databricks bundle deploy`/`run` against minilake. No behaviour changes for
+plain SQL/UC workloads.
+
+### Fixed
+
+- **`bundle deploy`/`run` intermittently failed with "lineage mismatch in
+  state files", even right after a successful deploy.** `GET
+  /api/2.0/workspace/export` always returned the base64-JSON envelope
+  (`{content, file_type}`), ignoring the `direct_download` query param. The
+  Databricks CLI reads bundle state files (`state/resources.json`) with
+  `direct_download=true`, expecting raw bytes back; the JSON-wrapped response
+  didn't parse as the expected state file, so the CLI silently fell back to
+  "no remote state" (`serial=0`, `lineage=""`) on every read after the first.
+  `workspace/export` now streams raw bytes when `direct_download=true`.
+- **The VS Code extension's Bundle Resource Explorer got stuck on "Timeout
+  while fetching run status" for runs that had already finished
+  successfully.** `runs/get`/`runs/list` never populated `run_page_url`,
+  which the Databricks CLI prints as `Run URL: %s` right after triggering a
+  run. Both `bundle run`'s log tailer and the extension's run-status monitor
+  regex-match a run id out of that printed URL to start polling — with no
+  URL, the id was never found, and the extension's 60s watchdog eventually
+  gave up. `run_page_url` is now populated on both endpoints.
+- **The extension's Workspace File System browser failed outright with
+  "Can't fetch details for /Users/\<user\>".** `/Users/<user>` never existed
+  — minilake only ever created `/Workspace/Users/<user>/...`, as a side
+  effect of a bundle deploy importing files there — and even once a
+  directory existed, `get-status`/`list` returned it without an
+  `object_id`, which the extension treats as a required field on every
+  workspace object. minilake now creates the user's home directory on
+  startup and assigns directories a (lazily cached) `object_id`, same as
+  files already had.
+- **Creating a new notebook/file from the extension's Workspace File System
+  browser failed with "Import format 'AUTO' is not implemented (only SOURCE
+  is supported)".** The extension's "New Notebook"/"New File" actions always
+  send `format: "AUTO"`, never `SOURCE`. `workspace/import` now accepts
+  `AUTO` as an alias for `SOURCE` — minilake only ever stores plain Python
+  source either way, so the two are handled identically.
+
 ## [1.7.4] — 2026-08-31
 
 Dependency fix and maintenance. No API changes.
