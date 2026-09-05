@@ -28,6 +28,7 @@ from minilake.models.workspace import (
     ObjectInfo,
     ObjectType,
 )
+from minilake.services.identity import USER_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,41 @@ def _next_id() -> int:
     return obj_id
 
 
+def _directory_object_id(normalized: str) -> int:
+    """Get (lazily assigning and caching) a directory's object_id.
+
+    Files get an object_id from the import/create call that first writes
+    them into `_state["objects"]`. Directories are never explicitly
+    "created" that way — they come into being as a side effect of an
+    import's `mkdir(parents=True)` or a `workspace/mkdirs` call — so this
+    assigns one the first time a directory is addressed by get-status/list
+    and remembers it for next time. The Databricks CLI/SDK (and the VS Code
+    extension) require every workspace object, directories included, to
+    carry an object_id; the real API never omits it.
+    """
+    entry = _state["objects"].setdefault(normalized, {})
+    if "object_id" not in entry:
+        entry["object_id"] = _next_id()
+    return entry["object_id"]
+
+
+def ensure_user_home() -> None:
+    """Create the implicit user's home directory, `/Users/<user>`.
+
+    A real Databricks workspace always has this directory the moment the
+    user exists — nothing has to be deployed into it first. minilake never
+    created it on its own (only `/Workspace/Users/<user>/...` comes into
+    being, as a side effect of a bundle deploy importing files there), so
+    `/Users/<user>` 404s until something happens to touch it. The VS Code
+    extension's Workspace File System browses from exactly that path and
+    has no 404 fallback, so it fails outright with "Can't fetch details for
+    /Users/<user>". Called once from the app startup lifespan; idempotent
+    (`mkdir(exist_ok=True)`), so it's harmless to call again on every boot,
+    including against the persisted `minilake_data` volume.
+    """
+    _resolve(f"/Users/{USER_NAME}").mkdir(parents=True, exist_ok=True)
+
+
 def resolve_workspace_path(path: str) -> Path:
     """Public helper: resolve a workspace path to its real filesystem path.
 
@@ -86,12 +122,20 @@ def resolve_workspace_path(path: str) -> Path:
 
 @router.post("/workspace/import")
 async def import_object(req: ImportWorkspaceRequest) -> dict:
-    """Import a notebook/file into the workspace (SOURCE format, PYTHON only)."""
+    """Import a notebook/file into the workspace (SOURCE format, PYTHON only).
+
+    AUTO is accepted as an alias for SOURCE: the real API infers the format
+    from the path/content when the caller doesn't pin one down, and the VS
+    Code extension's "New Notebook"/"New File" actions always send
+    `format: "AUTO"` unconditionally — rejecting it broke workspace item
+    creation outright. Since minilake only ever stores plain Python source
+    either way, treating the two the same is exact, not just a shortcut.
+    """
     fmt = req.format or ImportFormat.SOURCE
-    if fmt != ImportFormat.SOURCE:
+    if fmt not in (ImportFormat.SOURCE, ImportFormat.AUTO):
         raise DatabricksError(
             error_code="NOT_IMPLEMENTED",
-            message=f"Import format '{fmt.value}' is not implemented (only SOURCE is supported)",
+            message=f"Import format '{fmt.value}' is not implemented (only SOURCE/AUTO are supported)",
             status_code=501,
         )
     if req.language is not None and req.language != Language.PYTHON:
@@ -198,12 +242,20 @@ async def read_file(
     return Response(content=file_path.read_bytes(), media_type="application/octet-stream")
 
 
-@router.get("/workspace/export", response_model=ExportResponse)
+@router.get("/workspace/export")
 async def export_object(
     path: str = Query(...),
     format: Optional[str] = Query(None),
-) -> ExportResponse:
-    """Export a notebook/file from the workspace."""
+    direct_download: Optional[bool] = Query(None),
+) -> Response:
+    """Export a notebook/file from the workspace.
+
+    With `direct_download=true` the real API streams the raw file bytes
+    (this is how the Databricks CLI reads bundle state files, e.g.
+    `state/resources.json`, during `bundle deploy`/`run`) — returning the
+    usual base64-JSON envelope there instead breaks that state read and
+    makes the CLI silently treat the workspace as having no deployed state.
+    """
     normalized = _normalize(path)
     file_path = _resolve(normalized)
 
@@ -214,8 +266,14 @@ async def export_object(
             status_code=404,
         )
 
+    if direct_download:
+        return Response(content=file_path.read_bytes(), media_type="application/octet-stream")
+
     content_b64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
-    return ExportResponse(content=content_b64, file_type="py")
+    return Response(
+        content=ExportResponse(content=content_b64, file_type="py").model_dump_json(),
+        media_type="application/json",
+    )
 
 
 @router.get("/workspace/get-status", response_model=ObjectInfo)
@@ -232,7 +290,11 @@ async def get_status(path: str = Query(...)) -> ObjectInfo:
         )
 
     if file_path.is_dir():
-        return ObjectInfo(object_type=ObjectType.DIRECTORY, path=normalized)
+        return ObjectInfo(
+            object_type=ObjectType.DIRECTORY,
+            path=normalized,
+            object_id=_directory_object_id(normalized),
+        )
 
     meta = _state["objects"].get(normalized, {})
     obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))
@@ -270,7 +332,13 @@ async def list_objects(path: str = Query(...)) -> ListWorkspaceResponse:
     for child in sorted(dir_path.iterdir()):
         child_path = f"{normalized.rstrip('/')}/{child.name}"
         if child.is_dir():
-            objects.append(ObjectInfo(object_type=ObjectType.DIRECTORY, path=child_path))
+            objects.append(
+                ObjectInfo(
+                    object_type=ObjectType.DIRECTORY,
+                    path=child_path,
+                    object_id=_directory_object_id(child_path),
+                )
+            )
         else:
             meta = _state["objects"].get(child_path, {})
             obj_type = ObjectType(meta.get("object_type", ObjectType.FILE.value))

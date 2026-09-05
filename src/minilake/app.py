@@ -22,6 +22,7 @@ from minilake.duckdb_pool import DuckDBPool
 from minilake.errors import install_exception_handlers
 from minilake.persistence import load_state, save_state
 from minilake.services import get_enabled_routers, get_service_module, get_state_functions
+from minilake.services.workspace import ensure_user_home
 
 # Next.js ships hashed .woff2 fonts and .svg assets. Without these registrations
 # Python's mimetypes guesses application/octet-stream on a bare python:slim image
@@ -111,6 +112,7 @@ async def lifespan(app: FastAPI):
         # reaches `docker logs` for a long-running process.
         print(_render_banner(), flush=True)
         logger.info("minilake starting up...")
+        ensure_user_home()
         _duckdb_pool = DuckDBPool(settings.data_dir)
         set_duckdb_pool(_duckdb_pool)
 

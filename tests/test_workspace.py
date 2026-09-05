@@ -91,6 +91,27 @@ def test_workspace_export_nonexistent_fails(workspace_client: WorkspaceClient):
     print("✓ Workspace export of nonexistent path raises error")
 
 
+@pytest.mark.crud
+def test_workspace_import_auto_format_treated_as_source(workspace_client: WorkspaceClient):
+    """Test: AUTO format is accepted (aliased to SOURCE), not rejected as unimplemented.
+
+    The VS Code extension's "New Notebook"/"New File" actions always send
+    format=AUTO, never SOURCE explicitly.
+    """
+    path = "/Shared/auto_format_notebook.py"
+    workspace_client.workspace.import_(
+        path=path,
+        content=base64.b64encode(SAMPLE_SCRIPT).decode("ascii"),
+        format=ImportFormat.AUTO,
+        overwrite=True,
+    )
+
+    exported = workspace_client.workspace.export(path=path)
+    assert base64.b64decode(exported.content) == SAMPLE_SCRIPT
+
+    print("✓ AUTO import format is accepted like SOURCE")
+
+
 @pytest.mark.error
 def test_workspace_import_non_source_format_not_implemented(workspace_client: WorkspaceClient):
     """Test: Importing with a non-SOURCE format returns 501 (only SOURCE is emulated)."""

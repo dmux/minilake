@@ -247,6 +247,7 @@ class RunInfo(BaseModel):
     start_time: Optional[int] = None
     end_time: Optional[int] = None
     tasks: Optional[List[RunTaskInfo]] = None
+    run_page_url: Optional[str] = None
 
     class Config:
         extra = "allow"
