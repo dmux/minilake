@@ -198,12 +198,20 @@ async def read_file(
     return Response(content=file_path.read_bytes(), media_type="application/octet-stream")
 
 
-@router.get("/workspace/export", response_model=ExportResponse)
+@router.get("/workspace/export")
 async def export_object(
     path: str = Query(...),
     format: Optional[str] = Query(None),
-) -> ExportResponse:
-    """Export a notebook/file from the workspace."""
+    direct_download: Optional[bool] = Query(None),
+) -> Response:
+    """Export a notebook/file from the workspace.
+
+    With `direct_download=true` the real API streams the raw file bytes
+    (this is how the Databricks CLI reads bundle state files, e.g.
+    `state/resources.json`, during `bundle deploy`/`run`) — returning the
+    usual base64-JSON envelope there instead breaks that state read and
+    makes the CLI silently treat the workspace as having no deployed state.
+    """
     normalized = _normalize(path)
     file_path = _resolve(normalized)
 
@@ -214,8 +222,14 @@ async def export_object(
             status_code=404,
         )
 
+    if direct_download:
+        return Response(content=file_path.read_bytes(), media_type="application/octet-stream")
+
     content_b64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
-    return ExportResponse(content=content_b64, file_type="py")
+    return Response(
+        content=ExportResponse(content=content_b64, file_type="py").model_dump_json(),
+        media_type="application/json",
+    )
 
 
 @router.get("/workspace/get-status", response_model=ObjectInfo)
