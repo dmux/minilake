@@ -65,7 +65,7 @@ def _next_run_id() -> int:
 
 
 def _run_page_url(request: Request, job_id: Optional[int], run_id: int) -> str:
-    """Build a run_page_url for a run.
+    r"""Build a run_page_url for a run.
 
     The real Jobs API always populates this field on `runs/get`/`runs/list`
     responses, and the Databricks CLI relies on it: it prints `Run URL: %s`

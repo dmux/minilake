@@ -17,7 +17,6 @@ from fastapi import APIRouter, Query, Request, Response
 
 from minilake.config import settings
 from minilake.errors import DatabricksError
-from minilake.services.identity import USER_NAME
 from minilake.models.workspace import (
     DeleteWorkspaceRequest,
     ExportResponse,
@@ -29,6 +28,7 @@ from minilake.models.workspace import (
     ObjectInfo,
     ObjectType,
 )
+from minilake.services.identity import USER_NAME
 
 logger = logging.getLogger(__name__)
 
