@@ -8,7 +8,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
-## [1.7.5] — 2026-09-05
+## [1.7.6] — 2026-09-08
 
 Fixes four Workspace/Jobs API gaps that broke the Databricks VS Code extension
 (login, Bundle Resource Explorer, and the Workspace File System browser) and
@@ -250,6 +250,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.6]: https://github.com/dmux/minilake/compare/v1.7.4...v1.7.6
 [1.7.4]: https://github.com/dmux/minilake/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/dmux/minilake/compare/v1.7.2...v1.7.3
 [1.7.2]: https://github.com/dmux/minilake/compare/v1.7.1...v1.7.2
