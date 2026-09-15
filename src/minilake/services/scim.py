@@ -76,6 +76,29 @@ def _seed_current_user() -> None:
 _seed_current_user()
 
 
+# SCIM lets a client narrow a response with `attributes` (return only these) or
+# `excludedAttributes` (return everything but these). The Databricks Terraform provider
+# reads a group with `?attributes=displayName,externalId,entitlements` and then maps the
+# response into state field by field; handing it the full object instead makes it try to
+# set a field it has no address for, and it fails with an opaque
+# `Invalid address to set: []string{""}`. Honouring the parameter is what makes
+# `databricks_group` work at all.
+#
+# `id` and `schemas` are always returned, as the spec requires.
+_ALWAYS_RETURNED = {"id", "schemas"}
+
+
+def _project(record: Dict[str, Any], attributes: Optional[str], excluded: Optional[str]) -> Dict[str, Any]:
+    """Apply SCIM `attributes` / `excludedAttributes` to one resource."""
+    if attributes:
+        wanted = {a.strip() for a in attributes.split(",") if a.strip()} | _ALWAYS_RETURNED
+        return {k: v for k, v in record.items() if k in wanted}
+    if excluded:
+        unwanted = {a.strip() for a in excluded.split(",") if a.strip()} - _ALWAYS_RETURNED
+        return {k: v for k, v in record.items() if k not in unwanted}
+    return record
+
+
 def _config(resource: str) -> Tuple[Any, str, str, str]:
     return _RESOURCES[resource]
 
@@ -106,12 +129,37 @@ def _unique_check(resource: str, value: Optional[str], exclude_id: Optional[str]
             )
 
 
+# Multi-valued SCIM attributes. An entry in one of these is meaningless without a
+# `value`, and the real API drops the empty ones rather than storing them.
+_MULTI_VALUED = ("entitlements", "roles", "groups", "members", "emails")
+
+
+def _prune_empty(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop valueless entries from multi-valued attributes.
+
+    The Databricks Terraform provider posts `"entitlements": [{}]` when a group has
+    none. Echoing that back breaks the provider on its own input — it maps each entry
+    into state and an entry with no value has no address, which surfaces as
+    `Invalid address to set: []string{""}`. Real Databricks drops the entry, so we do.
+    """
+    for attribute in _MULTI_VALUED:
+        entries = payload.get(attribute)
+        if not isinstance(entries, list):
+            continue
+        kept = [e for e in entries if not isinstance(e, dict) or any(v is not None for v in e.values())]
+        if kept:
+            payload[attribute] = kept
+        else:
+            payload.pop(attribute, None)
+    return payload
+
+
 def _dump(model: Any, resource: str) -> Dict[str, Any]:
     """Serialise an incoming model to its wire shape, dropping unset fields."""
     _model, schema, _unique, _label = _config(resource)
     payload = model.model_dump(by_alias=True, exclude_none=True)
     payload.setdefault("schemas", [schema])
-    return payload
+    return _prune_empty(payload)
 
 
 # --------------------------------------------------------------------- filtering
@@ -151,6 +199,8 @@ def _list(
     start_index: Optional[int],
     count: Optional[int],
     sort_by: Optional[str],
+    attributes: Optional[str] = None,
+    excluded: Optional[str] = None,
 ) -> ListResponse:
     entries = [s for s in _state[resource].values() if _matches_filter(s, scim_filter)]
 
@@ -167,7 +217,7 @@ def _list(
         totalResults=len(entries),
         startIndex=start,
         itemsPerPage=len(page),
-        Resources=page,
+        Resources=[_project(r, attributes, excluded) for r in page],
     )
 
 
@@ -241,7 +291,7 @@ def _apply_patch(stored: Dict[str, Any], req: PatchRequest, resource: str) -> Di
             stored[path] = value
 
     _unique_check(resource, stored.get(_config(resource)[2]), exclude_id=stored.get("id"))
-    return stored
+    return _prune_empty(stored)
 
 
 def _as_list(value: Any) -> List[Any]:
@@ -265,15 +315,21 @@ async def list_users(
     startIndex: Optional[int] = QueryParam(None),
     count: Optional[int] = QueryParam(None),
     sortBy: Optional[str] = QueryParam(None),
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
 ) -> Dict[str, Any]:
-    """List users."""
-    return _list("Users", filter, startIndex, count, sortBy).model_dump(by_alias=True)
+    """List, honouring SCIM filtering and attribute projection."""
+    return _list("Users", filter, startIndex, count, sortBy, attributes, excludedAttributes).model_dump(by_alias=True)
 
 
 @router.get("/Users/{user_id}", response_model=None)
-async def get_user(user_id: str) -> Dict[str, Any]:
-    """Get a user by ID."""
-    return _get_or_404("Users", user_id)
+async def get_user(
+    user_id: str,
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
+) -> Dict[str, Any]:
+    """Get by ID, honouring SCIM attribute projection."""
+    return _project(_get_or_404("Users", user_id), attributes, excludedAttributes)
 
 
 @router.put("/Users/{user_id}", response_model=None)
@@ -309,15 +365,21 @@ async def list_groups(
     startIndex: Optional[int] = QueryParam(None),
     count: Optional[int] = QueryParam(None),
     sortBy: Optional[str] = QueryParam(None),
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
 ) -> Dict[str, Any]:
-    """List groups."""
-    return _list("Groups", filter, startIndex, count, sortBy).model_dump(by_alias=True)
+    """List, honouring SCIM filtering and attribute projection."""
+    return _list("Groups", filter, startIndex, count, sortBy, attributes, excludedAttributes).model_dump(by_alias=True)
 
 
 @router.get("/Groups/{group_id}", response_model=None)
-async def get_group(group_id: str) -> Dict[str, Any]:
-    """Get a group by ID."""
-    return _get_or_404("Groups", group_id)
+async def get_group(
+    group_id: str,
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
+) -> Dict[str, Any]:
+    """Get by ID, honouring SCIM attribute projection."""
+    return _project(_get_or_404("Groups", group_id), attributes, excludedAttributes)
 
 
 @router.put("/Groups/{group_id}", response_model=None)
@@ -360,15 +422,23 @@ async def list_service_principals(
     startIndex: Optional[int] = QueryParam(None),
     count: Optional[int] = QueryParam(None),
     sortBy: Optional[str] = QueryParam(None),
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
 ) -> Dict[str, Any]:
-    """List service principals."""
-    return _list("ServicePrincipals", filter, startIndex, count, sortBy).model_dump(by_alias=True)
+    """List, honouring SCIM filtering and attribute projection."""
+    return _list("ServicePrincipals", filter, startIndex, count, sortBy, attributes, excludedAttributes).model_dump(
+        by_alias=True
+    )
 
 
 @router.get("/ServicePrincipals/{sp_id}", response_model=None)
-async def get_service_principal(sp_id: str) -> Dict[str, Any]:
-    """Get a service principal by ID."""
-    return _get_or_404("ServicePrincipals", sp_id)
+async def get_service_principal(
+    sp_id: str,
+    attributes: Optional[str] = QueryParam(None),
+    excludedAttributes: Optional[str] = QueryParam(None),
+) -> Dict[str, Any]:
+    """Get by ID, honouring SCIM attribute projection."""
+    return _project(_get_or_404("ServicePrincipals", sp_id), attributes, excludedAttributes)
 
 
 @router.put("/ServicePrincipals/{sp_id}", response_model=None)

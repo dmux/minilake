@@ -149,8 +149,13 @@ async def list_queries(
     page_size: Optional[int] = QueryParam(None),
     page_token: Optional[str] = QueryParam(None),
 ) -> ListQueryObjectsResponse:
-    """List saved queries, newest first."""
-    entries: List[Dict[str, Any]] = list(_state["queries"].values())
+    """List saved queries, newest first.
+
+    A query the legacy API moved to the trash is hidden here too. There is one store
+    behind both surfaces, so a trashed query showing up in one list and not the other
+    would be two answers to the same question.
+    """
+    entries: List[Dict[str, Any]] = [q for q in _state["queries"].values() if q.get("lifecycle_state") != "TRASHED"]
     entries.reverse()
 
     limit = page_size if page_size is not None else 100

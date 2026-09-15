@@ -30,7 +30,9 @@ SERVICE_REGISTRY = {
     "sql_warehouses": "minilake.services.sql_warehouses",
     "saved_queries": "minilake.services.saved_queries",
     "alerts": "minilake.services.alerts",
+    "preview_sql": "minilake.services.preview_sql",
     "unity_catalog": "minilake.services.unity_catalog",
+    "grants": "minilake.services.grants",
     "workspace": "minilake.services.workspace",
     "clusters": "minilake.services.clusters",
     "cluster_policies": "minilake.services.cluster_policies",
@@ -38,6 +40,7 @@ SERVICE_REGISTRY = {
     "jobs": "minilake.services.jobs",
     "secrets": "minilake.services.secrets",
     "permissions": "minilake.services.permissions",
+    "workspace_admin": "minilake.services.workspace_admin",
     "catchall": "minilake.services.catchall",
 }
 

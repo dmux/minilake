@@ -62,7 +62,9 @@ _SERVICE_DISPLAY_NAMES = {
     "sql_warehouses": "SQL Warehouses",
     "saved_queries": "Saved Queries",
     "alerts": "Alerts",
+    "preview_sql": "SQL (legacy preview)",
     "unity_catalog": "Unity Catalog",
+    "grants": "UC Grants",
     "workspace": "Workspace",
     "clusters": "Clusters",
     "cluster_policies": "Cluster Policies",
@@ -70,6 +72,7 @@ _SERVICE_DISPLAY_NAMES = {
     "jobs": "Jobs",
     "secrets": "Secrets",
     "permissions": "Permissions",
+    "workspace_admin": "Workspace Admin",
 }
 
 

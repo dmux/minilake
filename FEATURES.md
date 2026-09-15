@@ -4,7 +4,8 @@
 
 **minilake** is a local Databricks API emulator backed by DuckDB for real SQL execution. This document details all implemented features, APIs, and their current status.
 
-**Coverage:** 208 of the 1168 endpoints the `databricks-sdk` calls (17.8%), measured — see
+**Coverage:** 267 of the 1168 endpoints the `databricks-sdk` calls (22.9%) — or ~47% of
+the *reachable* surface, once the blocks this project deliberately skips are excluded. Measured — see
 [docs/CLI_COVERAGE.md](docs/CLI_COVERAGE.md) for the generated map and
 [docs/EMULATION_ROADMAP.md](docs/EMULATION_ROADMAP.md) for what to build next.
 
@@ -874,6 +875,81 @@ plus `GET` / `PUT` / `PATCH` / `DELETE` on `/{id}` for each — 18 routes.
   naming one resolves
 
 **Status:** ✅ Complete and tested — `tests/test_cluster_policies.py`
+
+---
+
+### 17d. **Unity Catalog — Grants** ✅
+
+**Module:** `minilake/services/grants.py`
+**Endpoints:** `GET`/`PATCH` `/api/2.1/unity-catalog/permissions/{securable_type}/{full_name}`,
+`GET /api/2.1/unity-catalog/effective-permissions/{securable_type}/{full_name}`
+
+**Key Features:**
+
+- ✅ Real add/remove deltas; dropping a principal's last privilege drops the principal,
+  as a real workspace does
+- ✅ **Real inheritance.** A grant on a catalog is effective on its schemas and their
+  tables, and `get_effective` tags each privilege with the ancestor it came from. This
+  is the whole reason `effective-permissions` is a separate endpoint — without it the
+  route would look correct while hiding the one behaviour it exists for
+- ✅ Rejects a securable whose name does not match its type (a `TABLE` addressed by a
+  one-part name would sit in the store matching nothing)
+- ⚠️ The SDK sends `securable_type` as an `Enum` that is not a `str` subclass, so the
+  wire carries `SecurableType.CATALOG`, not `CATALOG`. Both are accepted
+- 🚫 **Never enforced.** No privilege is checked anywhere; a passing test here says
+  nothing about grants in a real workspace
+
+**Status:** ✅ Complete and tested — `tests/unity_catalog/test_grants.py`
+
+---
+
+### 17e. **Workspace Admin** ✅
+
+**Module:** `minilake/services/workspace_admin.py`
+**Endpoints:** `/api/2.0/git-credentials`, `/api/2.0/ip-access-lists`,
+`/api/2.0/global-init-scripts`, `/api/2.0/notification-destinations`,
+`/api/2.0/instance-profiles/*`, `/api/2.0/workspace-conf`
+
+**Key Features:**
+
+- ✅ Real CRUD for all six. Individually dull; together they are what a realistic
+  `terraform apply` touches before it reaches a catalog, and one 501 fails a whole plan
+- ✅ A git credential's `personal_access_token` is stored but **never returned**
+- ✅ `list` omits the fields that can carry secrets — the script body for init scripts,
+  `config` for notification destinations
+- ✅ `workspace-conf` values are coerced to strings, because the real API only ever
+  stores strings; an unset key reads back as `""` rather than being omitted, which is
+  what lets Terraform see a value it set and later cleared
+- 🚫 **Nothing is enforced.** No IP is blocked, no init script runs, no notification is
+  sent, and an instance profile grants nothing
+
+**Status:** ✅ Complete and tested — `tests/test_workspace_admin.py`
+
+---
+
+### 17f. **Legacy SQL (`preview/sql`)** ✅
+
+**Module:** `minilake/services/preview_sql.py`
+**Endpoints:** `/api/2.0/preview/sql/{queries,alerts,dashboards,widgets,visualizations,data_sources}`
+
+**Key Features:**
+
+- ✅ **Adapters, not a second store.** Queries and alerts delegate to `saved_queries.py`
+  and `alerts.py`, translating wire shapes; an object created through either surface is
+  visible and editable from the other
+- ✅ Translates the flat legacy alert condition (`options.column`/`op`/`value`) to the
+  modern nested one, including the operator symbol — an untranslated `>` would leave an
+  alert that silently never fires
+- ✅ Correct trash semantics: `DELETE` trashes, `POST .../trash/{id}` **restores**. A
+  trashed query is hidden from both list surfaces and still retrievable by id
+- ✅ The list endpoints are page-numbered. This is not a nicety: the SDK walks them by
+  incrementing `page` until a response is empty, so a handler that ignores the parameter
+  never terminates
+- ✅ `data_sources` projects the real warehouses, so a legacy client picks an id here and
+  uses it as `data_source_id`
+- 🚫 Dashboards, widgets and visualizations are metadata — nothing renders them
+
+**Status:** ✅ Complete and tested — `tests/test_preview_sql.py`
 
 ---
 

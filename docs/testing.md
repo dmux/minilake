@@ -105,3 +105,24 @@ If it should also be agent-reachable, add `mcp/tools/<name>.py` exporting
 service, so `MINILAKE_SERVICES` filtering applies automatically.
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the PR checklist.
+
+## Terraform conformance
+
+`tests/terraform/` runs the **real** Databricks Terraform provider against minilake:
+`apply` → `plan` → `destroy` over a realistic 15-resource config, asserting that the
+second plan is empty.
+
+It needs two things the test image bakes in (see `Dockerfile.test`): the `terraform`
+binary, and a local mirror of the provider at `$MINILAKE_TF_PROVIDER_MIRROR`, warmed at
+build time so the suite needs no network. Running pytest on the host without terraform
+installed **skips** these tests rather than failing; without the mirror, `init` falls
+back to the registry, which works but needs network.
+
+Both versions are pinned. A conformance test is only meaningful if it keeps testing the
+same provider — a floating version turns an upstream release into a mysterious CI
+failure.
+
+The empty second plan is the assertion that earns its keep. A resource minilake accepts
+but reports back differently is permanent drift, which is worse than a 501: it looks
+like it works until someone runs `plan` twice. The first run of this test found three
+such defects that every SDK-driven test in the suite had missed.

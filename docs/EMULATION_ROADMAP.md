@@ -9,22 +9,49 @@ overwritten on the next run.
 
 ## Where we stand
 
-minilake answers **208 of the 1168 endpoints** the `databricks-sdk` calls — **17.8%**,
-up from 13.3% before the work described in "Done" below. Of the 127 command groups the
-`databricks` CLI exposes, **21** now work end-to-end: `alerts`, `catalogs`,
-`cluster-policies`, `clusters`, `current-user`, `groups`, `groups-v2`,
-`instance-pools`, `jobs`, `metastores`, `queries`, `query-history`, `secrets`,
-`service-principals`, `service-principals-v2`, `tokens`, `users`, `users-v2`,
-`warehouses`, plus the CLI-local `aitools` and `labs`.
+minilake answers **267 of the 1168 endpoints** the `databricks-sdk` calls — 22.9%.
 
-The tiers below are ordered by value per unit of work for the project's actual goal —
-one developer running Databricks-dependent code locally — not by endpoint count.
+That headline number understates things, and the roadmap used to repeat it without
+the qualification. **604 of the missing endpoints are in blocks this project has
+deliberately decided not to emulate** (MLflow, the Account API, identity v2,
+marketplace, Genie, Lakebase, vector search, serving, clean rooms, apps). Against the
+*reachable* surface, coverage is **267 of 564 — about 47%**. That is the number worth
+tracking.
+
+Of the 127 command groups the `databricks` CLI exposes, **30** work end to end.
 
 ---
 
 ## Done
 
 Delivered, with tests driven through the real `databricks-sdk` (suite: 339 passing).
+
+### 1.7.8 — Terraform conformance and the admin belt
+
+- **A Terraform conformance test** (`tests/terraform/`). `docs/terraform.md` promised
+  the provider worked; nothing verified it. The first run found three defects that
+  every SDK-driven test had missed, because they are in behaviour only the provider
+  exercises — see the file's docstring. It runs `apply` → `plan` → `destroy` against a
+  realistic 15-resource config, and the empty second plan is the assertion that
+  matters: it is what proves minilake reports back what it was given.
+- **UC grants** (`w.grants.*`, `databricks_grants`) — with real **inheritance**: a
+  grant on a catalog is effective on its schemas and tables, tagged with its source.
+  `tests/unity_catalog/test_grants.py`
+- **The workspace-admin belt** — git credentials, IP access lists, global init
+  scripts, notification destinations, instance profiles and `workspace-conf`. Each is
+  trivial; together they are what a `terraform apply` touches before it reaches
+  anything interesting, and one 501 fails a whole plan.
+  `tests/test_workspace_admin.py`
+- **Legacy `preview/sql`** — queries, alerts, dashboards, widgets, visualizations and
+  data sources, as **adapters over the modern stores** rather than a second copy. A
+  query created through either surface is visible from the other.
+  `tests/test_preview_sql.py`
+- **Coverage harness fix.** It had been scoring all 8 Files API endpoints as missing:
+  the SDK writes `/api/2.0/fs/files{path}` with the parameter carrying its own leading
+  slash, and the normalizer produced a path matching no route. Those two paths are the
+  only ones in the SDK shaped that way.
+
+### 1.7.7 — the first coverage pass
 
 **Things that already had an engine, and only lacked a door:**
 

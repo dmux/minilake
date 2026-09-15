@@ -99,13 +99,16 @@ More in [Getting Started](https://github.com/dmux/minilake/blob/main/docs/gettin
 | **Clusters** | ✅ Real state machine | CRUD + timed lifecycle transitions, `update`/`pin`/`unpin`; **no real Spark compute** (by design) |
 | **Cluster policies & instance pools** | ✅ Real CRUD | Resolve and validate against clusters; never enforced — there is no compute to constrain |
 | **Permissions** | ✅ Real CRUD | Single-user "allow-all" default (by design — see Gaps) |
+| **UC Grants** | ✅ Real CRUD | `w.grants.*` and `databricks_grants`, with real privilege **inheritance** (a catalog grant is effective on its schemas and tables); never enforced |
+| **Workspace admin** | ✅ Real CRUD | Git credentials, IP access lists, global init scripts, notification destinations, instance profiles, `workspace-conf` — stored and read back, never enforced |
+| **Legacy SQL (`preview/sql`)** | ✅ Real | Queries, alerts, dashboards, widgets, visualizations, data sources — adapters over the modern stores, so both surfaces see one object |
 | **Identity & SCIM** | ✅ Real CRUD | Current user, plus Users/Groups/ServicePrincipals CRUD, SCIM `PATCH` and filtering. Identities are records, not credentials — see Gaps |
 | **Tokens** | ✅ Real | `w.tokens.*`; the value is returned once, as in the real API — but authenticates nothing |
 | **Persistence** (`MINILAKE_PERSIST=1`) | ✅ Real | JSON snapshot on shutdown, restored on startup |
 | **Unity Catalog protocol for Spark** | ✅ Real | `spark.table("cat.sch.tbl")` resolves against minilake — see [Spark & Delta Lake](https://github.com/dmux/minilake/blob/main/docs/spark-and-delta.md#reading-by-name-with-unity-catalog) |
 | **JupyterLab + PySpark + Delta** (optional) | ✅ Real | `docker compose --profile notebook up` |
 | **MCP Server** (optional, `MINILAKE_MCP=1`) | ✅ Real | 67 tools + resources + prompts at `/mcp` — see [MCP Server](https://github.com/dmux/minilake/blob/main/docs/mcp/index.md) |
-| Repos/Git, multi-language notebooks, DBT/pipeline tasks, DLT, Model Registry, Vector Search, Dashboards, Delta Sharing | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED`. For the measured picture, see [API coverage](https://github.com/dmux/minilake/blob/main/docs/CLI_COVERAGE.md) |
+| Repos, multi-language notebooks, DBT/pipeline tasks, DLT, Model Registry, Vector Search, Lakeview/Genie, Delta Sharing | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED`. For the measured picture, see [API coverage](https://github.com/dmux/minilake/blob/main/docs/CLI_COVERAGE.md) |
 
 ## Known Gaps
 
