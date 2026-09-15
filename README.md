@@ -76,37 +76,45 @@ More in [Getting Started](https://github.com/dmux/minilake/blob/main/docs/gettin
 | [Testing & development](https://github.com/dmux/minilake/blob/main/docs/testing.md) | Running the suite, adding an API group |
 | [Releases & CI/CD](https://github.com/dmux/minilake/blob/main/docs/releases.md) | How a tag becomes a published image |
 | [Feature status](https://github.com/dmux/minilake/blob/main/FEATURES.md) | Endpoint-by-endpoint status and design rationale |
+| [API coverage](https://github.com/dmux/minilake/blob/main/docs/CLI_COVERAGE.md) | Measured: every SDK endpoint probed through the real `databricks` CLI |
+| [Emulation roadmap](https://github.com/dmux/minilake/blob/main/docs/EMULATION_ROADMAP.md) | What is worth building next, with measured gap counts |
 
 ## Supported Services
 
 | Service | Status | Notes |
 |---|---|---|
-| **Unity Catalog** (catalogs, schemas, tables, volumes) | ✅ Real | Each catalog = its own DuckDB database (`ATTACH`), native `catalog.schema.table` addressing |
+| **Unity Catalog** (catalogs, schemas, tables, volumes, functions) | ✅ Real | Each catalog = its own DuckDB database (`ATTACH`), native `catalog.schema.table` addressing; a SQL function becomes a real DuckDB macro, callable by its three-part name |
+| **Unity Catalog metastore** | ✅ Real | One synthetic metastore: `current-metastore-assignment`, `metastore_summary`, list/get |
 | **EXTERNAL Delta Tables** | ✅ Real | Real Delta files; `INSERT`/`UPDATE`/`DELETE` via a generated Spark job, reads via `delta_scan()` |
 | **SQL Statement Execution** | ✅ Real | Real DuckDB; `JSON_ARRAY`/`ARROW_STREAM`/`CSV`, `INLINE`/`EXTERNAL_LINKS`; result manifest carries column types |
 | **SQL Warehouses** | ✅ Real | Full CRUD + lifecycle |
 | **Query History** | ✅ Real | `w.query_history.list()` over everything executed, failures included |
 | **Saved Queries** | ✅ Real | `w.queries.*` CRUD with `update_mask` |
+| **Alerts** | ✅ Real | `w.alerts.*` CRUD; conditions are really evaluated against query results, and back `sql_task.alert` |
 | **Web UI** | ✅ Real | Athena-style SQL workspace at `/ui` — see [Web UI](https://github.com/dmux/minilake/blob/main/docs/ui.md) |
-| **Jobs** | ✅ Real | Sibling Docker container execution (Spark) or subprocess fallback; real DAG scheduling (`depends_on`/`run_if`); `sql_task.file` |
+| **Jobs** | ✅ Real | Sibling Docker container execution (Spark) or subprocess fallback; real DAG scheduling (`depends_on`/`run_if`); `runs/submit` one-shot runs; `sql_task.file`/`.query`/`.alert` all execute for real |
 | **Workspace** | ✅ Real | File-backed notebook/script storage; raw-bytes `workspace-files` sync powers `databricks bundle deploy` / `bundle run` |
 | **DBFS & Files API** | ✅ Real | File-backed storage, chunked upload |
-| **Secrets** | ✅ Real | Real CRUD; values only resolvable inside job env vars, never via direct API (matches real Databricks) |
-| **Clusters** | ✅ Real state machine | CRUD + timed lifecycle transitions; **no real Spark compute** (by design) |
+| **Secrets** | ✅ Real | Real CRUD; values only resolvable inside job env vars, never via direct API (matches real Databricks). Scope ACLs are stored and read back, never enforced |
+| **Clusters** | ✅ Real state machine | CRUD + timed lifecycle transitions, `update`/`pin`/`unpin`; **no real Spark compute** (by design) |
+| **Cluster policies & instance pools** | ✅ Real CRUD | Resolve and validate against clusters; never enforced — there is no compute to constrain |
 | **Permissions** | ✅ Real CRUD | Single-user "allow-all" default (by design — see Gaps) |
-| **Identity (SCIM)** | ✅ Static | Fake current-user endpoint |
+| **Identity & SCIM** | ✅ Real CRUD | Current user, plus Users/Groups/ServicePrincipals CRUD, SCIM `PATCH` and filtering. Identities are records, not credentials — see Gaps |
+| **Tokens** | ✅ Real | `w.tokens.*`; the value is returned once, as in the real API — but authenticates nothing |
 | **Persistence** (`MINILAKE_PERSIST=1`) | ✅ Real | JSON snapshot on shutdown, restored on startup |
 | **Unity Catalog protocol for Spark** | ✅ Real | `spark.table("cat.sch.tbl")` resolves against minilake — see [Spark & Delta Lake](https://github.com/dmux/minilake/blob/main/docs/spark-and-delta.md#reading-by-name-with-unity-catalog) |
 | **JupyterLab + PySpark + Delta** (optional) | ✅ Real | `docker compose --profile notebook up` |
 | **MCP Server** (optional, `MINILAKE_MCP=1`) | ✅ Real | 67 tools + resources + prompts at `/mcp` — see [MCP Server](https://github.com/dmux/minilake/blob/main/docs/mcp/index.md) |
-| Secrets ACLs, Repos/Git, multi-language notebooks, DBT/pipeline tasks, Model Registry, Vector Search, Dashboards | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED` |
+| Repos/Git, multi-language notebooks, DBT/pipeline tasks, DLT, Model Registry, Vector Search, Dashboards, Delta Sharing | 🚫 Not implemented | Returns `501 NOT_IMPLEMENTED`. For the measured picture, see [API coverage](https://github.com/dmux/minilake/blob/main/docs/CLI_COVERAGE.md) |
 
 ## Known Gaps
 
 These are **deliberate**, not oversights — minilake targets one developer running it
 locally, not a shared or multi-tenant server:
 
-- **No real authentication** — any token is accepted; there's only ever one real user.
+- **No real authentication** — any token is accepted. SCIM identities and personal access
+  tokens are records, not credentials: creating a user makes no way to sign in, and
+  revoking a token locks nobody out.
 - **No access-control enforcement** — the Permissions API is real CRUD but always allow-all,
   so a test that passes here says nothing about grants in a real workspace.
 - **No real Spark compute for Clusters** — state machine only; real compute happens through
@@ -115,7 +123,6 @@ locally, not a shared or multi-tenant server:
   contends on locks.
 - **Uneven test coverage** — `jobs.py`, `sql_statements.py` and `unity_catalog.py` are
   covered mostly on happy paths, not edge cases.
-- **Secrets ACLs not implemented** — scope/secret CRUD is real, ACL endpoints aren't.
 
 ## Contributing
 

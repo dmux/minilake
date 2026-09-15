@@ -484,7 +484,7 @@ td.desc{color:var(--text-muted)}
 
 <header class="hdr" id="hdr">
   <div class="wrap nav">
-    <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake <span class="v">v1.7.6</span></a>
+    <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake <span class="v">v1.7.7</span></a>
     <nav class="nav-links" id="navlinks">
       <a href="#features">Features</a>
       <a href="#code">Examples</a>
@@ -582,9 +582,9 @@ td.desc{color:var(--text-muted)}
 <section class="section section--tight">
   <div class="wrap">
     <div class="stats rv">
-      <div class="stat"><b>16<em>+</em></b><span>Databricks API groups emulated, from Unity Catalog to Secrets</span></div>
+      <div class="stat"><b>21<em>+</em></b><span>Databricks API groups emulated, from Unity Catalog to SCIM</span></div>
       <div class="stat"><b>67</b><span>MCP tools for LLM agents, served on the same port</span></div>
-      <div class="stat"><b>138<em>+</em></b><span>tests driven by the real Databricks SDK, not mocks</span></div>
+      <div class="stat"><b>338<em>+</em></b><span>tests driven by the real Databricks SDK, not mocks</span></div>
       <div class="stat"><b>$<em>0</em></b><span>cloud spend — everything runs on your machine</span></div>
     </div>
   </div>
@@ -1015,20 +1015,24 @@ MINILAKE_MCP=1 minilake --port 8000</code></pre>
           <tr><th>Service</th><th>Status</th><th>What that means</th></tr>
         </thead>
         <tbody>
-          <tr><td>Unity Catalog</td><td><span class="pill real">Real</span></td><td class="desc">Catalogs, schemas, tables, volumes — each catalog is its own DuckDB database, with native three-part addressing</td></tr>
+          <tr><td>Unity Catalog</td><td><span class="pill real">Real</span></td><td class="desc">Catalogs, schemas, tables, volumes, functions — each catalog is its own DuckDB database, with native three-part addressing</td></tr>
+          <tr><td>UC functions</td><td><span class="pill real">Real</span></td><td class="desc">A SQL function becomes a real DuckDB macro, so <code>SELECT cat.sch.fn(x)</code> actually computes — not a registry entry</td></tr>
           <tr><td>SQL statements</td><td><span class="pill real">Real</span></td><td class="desc">Executed on DuckDB; all three formats and both dispositions, with a typed result manifest</td></tr>
           <tr><td>EXTERNAL Delta tables</td><td><span class="pill real">Real</span></td><td class="desc">Genuine Delta files; writes go through a generated Spark job, reads through <code>delta_scan()</code></td></tr>
-          <tr><td>Jobs</td><td><span class="pill real">Real</span></td><td class="desc"><code>spark-submit</code> in sibling containers (or a subprocess fallback), real DAG scheduling, real logs</td></tr>
+          <tr><td>Jobs</td><td><span class="pill real">Real</span></td><td class="desc"><code>spark-submit</code> in sibling containers (or a subprocess fallback), real DAG scheduling, real logs, one-shot <code>runs/submit</code></td></tr>
           <tr><td>SQL warehouses</td><td><span class="pill real">Real</span></td><td class="desc">Full CRUD and lifecycle; statements run regardless of state, as they do locally</td></tr>
           <tr><td>Query history &amp; saved queries</td><td><span class="pill real">Real</span></td><td class="desc">Server-backed, failures included — which is usually why you opened history</td></tr>
+          <tr><td>Alerts</td><td><span class="pill real">Real</span></td><td class="desc">The condition is evaluated against real query results, so an alert fires on your data — never on a stored constant</td></tr>
           <tr><td>Workspace, DBFS &amp; Files</td><td><span class="pill real">Real</span></td><td class="desc">File-backed storage with chunked upload; raw-bytes sync is what makes <code>bundle deploy</code> work</td></tr>
           <tr><td>Secrets</td><td><span class="pill real">Real</span></td><td class="desc">Real CRUD; values are resolvable only inside job environment variables, never through the API</td></tr>
           <tr><td>Web UI &amp; notebooks</td><td><span class="pill real">Real</span></td><td class="desc">Athena-style SQL workspace at <code>/ui</code>, with JupyterLab proxied at <code>/jupyter</code></td></tr>
           <tr><td>MCP server</td><td><span class="pill real">Real</span></td><td class="desc">Opt-in with <code>MINILAKE_MCP=1</code>: 67 tools, 8 resources, 4 prompts on the same port</td></tr>
           <tr><td>Persistence</td><td><span class="pill real">Real</span></td><td class="desc"><code>MINILAKE_PERSIST=1</code> snapshots state as JSON on shutdown and restores it on startup</td></tr>
           <tr><td>Clusters</td><td><span class="pill partial">State machine</span></td><td class="desc">CRUD plus timed lifecycle transitions — deliberately no Spark compute; that lives in Jobs</td></tr>
+          <tr><td>Policies &amp; instance pools</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">They resolve and validate, so a bundle naming one deploys — but there is no compute here for a policy to constrain</td></tr>
           <tr><td>Permissions</td><td><span class="pill partial">Allow-all CRUD</span></td><td class="desc">Real create/read/update, but nothing is ever enforced — this is a single-user tool</td></tr>
-          <tr><td>Identity (SCIM)</td><td><span class="pill partial">Static</span></td><td class="desc">A fixed current-user endpoint; there is exactly one user and any token is accepted</td></tr>
+          <tr><td>Identity &amp; SCIM</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">Users, groups and service principals, with SCIM filtering and <code>PATCH</code> — records, not credentials; any token is still accepted</td></tr>
+          <tr><td>Tokens</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">The value comes back exactly once, as it does for real — and then authenticates nothing</td></tr>
           <tr><td>DLT, Model Registry, Vector Search, Dashboards, Repos</td><td><span class="pill no">Not implemented</span></td><td class="desc">Returns <code>501 NOT_IMPLEMENTED</code> — loudly, so you never mistake it for working</td></tr>
         </tbody>
       </table>
