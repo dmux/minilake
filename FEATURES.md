@@ -8,8 +8,8 @@
 [docs/CLI_COVERAGE.md](docs/CLI_COVERAGE.md) for the generated map and
 [docs/EMULATION_ROADMAP.md](docs/EMULATION_ROADMAP.md) for what to build next.
 
-**Latest Update:** 2026-09-08
-**Version:** 1.7.6 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
+**Latest Update:** 2026-09-15
+**Version:** 1.7.7 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
 
 ---

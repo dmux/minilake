@@ -8,6 +8,81 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.7] — 2026-09-15
+
+Expands API emulation coverage from 13.3% to 17.8% of the endpoints the
+`databricks-sdk` calls (155 → 208), and adds the tooling that measures it.
+CLI command groups working end-to-end: 10 → 21. No behaviour changes for
+existing SQL/UC/Jobs workloads.
+
+### Added
+
+- **Coverage tooling.** `scripts/cli_coverage.py` drives the real `databricks`
+  CLI against a running minilake and probes every `(method, path)` the
+  installed SDK calls, recording which fall through to the catchall 501. The
+  unit is the method+path pair rather than the path: probing everything with
+  GET scores POST-only endpoints as missing, because FastAPI falls through
+  when no method matches. Outputs `docs/CLI_COVERAGE.md` (generated) and
+  `docs/EMULATION_ROADMAP.md` (curated). The CLI is pinned into
+  `Dockerfile.test` so numbers stay comparable across runs.
+- **`sql_task.query` and `sql_task.alert` execute for real.** Both were
+  `SKIPPED`. A `query` resolves the saved query's text through the Queries
+  API — which had existed all along, making the previous "no Queries API"
+  note stale — and an `alert` re-runs the watched query and evaluates its
+  condition. Only `sql_task.dashboard` is still `SKIPPED`.
+- **`POST /api/2.2/jobs/runs/submit`** — one-shot runs that carry their tasks
+  inline and belong to no job, the path `databricks bundle run` and most CI
+  code take. Reuses the existing DAG scheduler, and honours
+  `idempotency_token` so a repeated submit returns the original run.
+- **Alerts API** (`/api/2.0/sql/alerts`) — full CRUD with `update_mask`.
+  Conditions are evaluated against real query results rather than a stored
+  state.
+- **SCIM Users, Groups and Service Principals**
+  (`/api/2.0/preview/scim/v2/*`, 18 endpoints) — CRUD, the `PATCH` forms
+  Terraform sends for group membership (including
+  `members[value eq "id"]`), and `attribute eq "value"` filtering. The
+  current user is seeded so `Me` and `Users` never disagree.
+- **Unity Catalog metastore reads** — `current-metastore-assignment`,
+  `metastore_summary`, and `metastores` list/get. Small, but several clients
+  call the assignment during setup and previously gave up at the 501 before
+  reaching a catalog that worked.
+- **Unity Catalog functions** — a SQL function is created as a real DuckDB
+  `MACRO`, so a function registered through the UC API is then callable from
+  the Statement Execution API by its three-part name. Not metadata-only.
+- **Personal access tokens** (`/api/2.0/token/*`) — the value is returned
+  exactly once, as in the real API.
+- **Secret scope ACLs** (`/api/2.0/secrets/acls/*`) — stored and read back,
+  never enforced.
+- **Cluster policies** (`/api/2.0/policies/clusters/*`) and **instance pools**
+  (`/api/2.0/instance-pools/*`) — real CRUD. Neither is enforced: there is no
+  compute here for a policy to constrain, and pool stats are permanently
+  zero. They exist so a bundle or Terraform config naming one resolves.
+- **Clusters `update`, `pin` and `unpin`** — the last gaps in that group.
+  `update` is a partial edit honouring `update_mask`, so changing one setting
+  does not blank the rest of the spec.
+
+### Changed
+
+- **Clusters now retain `policy_id` and `instance_pool_id`.**
+  `CreateClusterRequest` previously dropped them via `extra="ignore"`. Now
+  that policies and pools are real resources, a cluster that forgot the
+  policy it was created with would read as permanent drift in Terraform, so
+  both fields are kept, reported back, and validated on create — a cluster
+  naming one that does not exist is rejected. A policy or pool in use cannot
+  be deleted.
+- `README.md` and the published site list the services added above. Both
+  previously described Identity as a static current-user endpoint and listed
+  secret ACLs as unimplemented; neither was true after this release's work.
+
+### Notes
+
+Identities, tokens and ACLs are records, not credentials. minilake accepts
+any bearer token by design, so creating a user makes no way to sign in and
+revoking a token locks nobody out. These exist because tooling creates them
+as a setup step and stops when that step fails.
+
+Test suite: 338 passing, up from 267.
+
 ## [1.7.6] — 2026-09-08
 
 Fixes four Workspace/Jobs API gaps that broke the Databricks VS Code extension
@@ -250,6 +325,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.7]: https://github.com/dmux/minilake/compare/v1.7.6...v1.7.7
 [1.7.6]: https://github.com/dmux/minilake/compare/v1.7.4...v1.7.6
 [1.7.4]: https://github.com/dmux/minilake/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/dmux/minilake/compare/v1.7.2...v1.7.3
