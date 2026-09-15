@@ -484,7 +484,7 @@ td.desc{color:var(--text-muted)}
 
 <header class="hdr" id="hdr">
   <div class="wrap nav">
-    <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake <span class="v">v1.7.7</span></a>
+    <a class="brand" href="#top"><img src="assets/minilake-logo.png" alt="" width="32" height="32" />MiniLake <span class="v">v1.7.8</span></a>
     <nav class="nav-links" id="navlinks">
       <a href="#features">Features</a>
       <a href="#code">Examples</a>
@@ -582,9 +582,9 @@ td.desc{color:var(--text-muted)}
 <section class="section section--tight">
   <div class="wrap">
     <div class="stats rv">
-      <div class="stat"><b>21<em>+</em></b><span>Databricks API groups emulated, from Unity Catalog to SCIM</span></div>
+      <div class="stat"><b>30<em>+</em></b><span>Databricks API groups emulated, from Unity Catalog to SCIM</span></div>
       <div class="stat"><b>67</b><span>MCP tools for LLM agents, served on the same port</span></div>
-      <div class="stat"><b>338<em>+</em></b><span>tests driven by the real Databricks SDK, not mocks</span></div>
+      <div class="stat"><b>378<em>+</em></b><span>tests driven by the real Databricks SDK, not mocks</span></div>
       <div class="stat"><b>$<em>0</em></b><span>cloud spend — everything runs on your machine</span></div>
     </div>
   </div>
@@ -645,7 +645,7 @@ td.desc{color:var(--text-muted)}
       <article class="card rv">
         <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6.5v11L12 22l9-4.5v-11L12 2Z"/><path d="M7.5 9.2v5.3L12 16.8M16.5 9.2v5.3L12 16.8M12 7v9.8"/></svg></div>
         <h3>Terraform &amp; Asset Bundles</h3>
-        <p>Point the <code>databricks</code> provider at localhost and <code>terraform apply</code> creates real catalogs. <code>databricks bundle deploy</code> and <code>bundle run</code> work end to end — jobs execute for real.</p>
+        <p>Point the <code>databricks</code> provider at localhost and <code>terraform apply</code> creates real catalogs. Verified on every test run: the real provider is driven through <code>apply</code>, <code>plan</code> and <code>destroy</code>, and a second plan has to come back empty. <code>databricks bundle deploy</code> and <code>bundle run</code> work end to end — jobs execute for real.</p>
         <span class="tagline blue">Wire-compatible</span>
       </article>
 
@@ -1016,6 +1016,7 @@ MINILAKE_MCP=1 minilake --port 8000</code></pre>
         </thead>
         <tbody>
           <tr><td>Unity Catalog</td><td><span class="pill real">Real</span></td><td class="desc">Catalogs, schemas, tables, volumes, functions — each catalog is its own DuckDB database, with native three-part addressing</td></tr>
+          <tr><td>UC grants</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">With real inheritance — a grant on a catalog is effective on its schemas and tables — but no privilege is ever checked</td></tr>
           <tr><td>UC functions</td><td><span class="pill real">Real</span></td><td class="desc">A SQL function becomes a real DuckDB macro, so <code>SELECT cat.sch.fn(x)</code> actually computes — not a registry entry</td></tr>
           <tr><td>SQL statements</td><td><span class="pill real">Real</span></td><td class="desc">Executed on DuckDB; all three formats and both dispositions, with a typed result manifest</td></tr>
           <tr><td>EXTERNAL Delta tables</td><td><span class="pill real">Real</span></td><td class="desc">Genuine Delta files; writes go through a generated Spark job, reads through <code>delta_scan()</code></td></tr>
@@ -1031,9 +1032,11 @@ MINILAKE_MCP=1 minilake --port 8000</code></pre>
           <tr><td>Clusters</td><td><span class="pill partial">State machine</span></td><td class="desc">CRUD plus timed lifecycle transitions — deliberately no Spark compute; that lives in Jobs</td></tr>
           <tr><td>Policies &amp; instance pools</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">They resolve and validate, so a bundle naming one deploys — but there is no compute here for a policy to constrain</td></tr>
           <tr><td>Permissions</td><td><span class="pill partial">Allow-all CRUD</span></td><td class="desc">Real create/read/update, but nothing is ever enforced — this is a single-user tool</td></tr>
+          <tr><td>Workspace admin</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">Git credentials, IP access lists, init scripts, notification destinations, instance profiles, workspace conf — what a <code>terraform apply</code> touches on its way past</td></tr>
           <tr><td>Identity &amp; SCIM</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">Users, groups and service principals, with SCIM filtering and <code>PATCH</code> — records, not credentials; any token is still accepted</td></tr>
           <tr><td>Tokens</td><td><span class="pill partial">Unenforced CRUD</span></td><td class="desc">The value comes back exactly once, as it does for real — and then authenticates nothing</td></tr>
-          <tr><td>DLT, Model Registry, Vector Search, Dashboards, Repos</td><td><span class="pill no">Not implemented</span></td><td class="desc">Returns <code>501 NOT_IMPLEMENTED</code> — loudly, so you never mistake it for working</td></tr>
+          <tr><td>Legacy SQL (<code>preview/sql</code>)</td><td><span class="pill real">Real</span></td><td class="desc">Queries, alerts and dashboards on the deprecated routes — adapters over the modern stores, so both surfaces see one object</td></tr>
+          <tr><td>DLT, Model Registry, Vector Search, Lakeview, Repos</td><td><span class="pill no">Not implemented</span></td><td class="desc">Returns <code>501 NOT_IMPLEMENTED</code> — loudly, so you never mistake it for working</td></tr>
         </tbody>
       </table>
     </div>

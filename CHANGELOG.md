@@ -8,6 +8,79 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.7.8] — 2026-09-15
+
+Makes the Terraform claim testable, then acts on what the test found.
+
+Coverage: **208 → 267** of the 1168 endpoints the `databricks-sdk` calls (17.8% →
+22.9%). That raw percentage was always the wrong measure, though — 604 of the missing
+endpoints are in blocks this project deliberately skips. Against the *reachable*
+surface it is **267 of 564, about 47%**. CLI command groups working end to end:
+21 → 30.
+
+### Added
+
+- **A Terraform conformance test** (`tests/terraform/`). `docs/terraform.md` promised
+  the Databricks provider worked against minilake and nothing verified it. The test
+  drives the real provider through `apply` → `plan` → `destroy` over a 15-resource
+  config and asserts the second plan is empty. `terraform` and a pinned provider
+  mirror are baked into `Dockerfile.test`, so the suite still needs no network;
+  running pytest on a host without terraform skips these rather than failing.
+- **Unity Catalog grants** (`/api/2.1/unity-catalog/permissions` and
+  `effective-permissions`) — `w.grants.*` and Terraform's `databricks_grants`, with
+  **real inheritance**: a grant on a catalog is effective on its schemas and their
+  tables, and each effective privilege is tagged with the ancestor it came from.
+- **The workspace-admin APIs**: git credentials, IP access lists, global init
+  scripts, notification destinations, instance profiles and `workspace-conf`. Each is
+  trivial alone; together they are what a realistic `terraform apply` touches before
+  it reaches a catalog, where a single 501 fails the whole plan.
+- **Legacy `/api/2.0/preview/sql/*`** — queries, alerts, dashboards, widgets,
+  visualizations and data sources, implemented as **adapters over the modern stores**
+  rather than a second copy. An object created through either surface is visible and
+  editable from the other.
+
+### Fixed
+
+Three defects the conformance test found on its first run, all in behaviour only the
+Terraform provider exercises, which is why every SDK-driven test in the suite had
+missed them:
+
+- **SCIM echoed back empty multi-valued entries.** The provider posts
+  `"entitlements": [{}]` for a group with none; minilake stored and returned it, and
+  the provider then failed on its own input with
+  `Invalid address to set: []string{""}`. Valueless entries are now dropped, as the
+  real API does.
+- **SQL warehouses caused permanent Terraform drift.** `auto_stop_mins`,
+  `enable_photon`, `max_num_clusters` and `odbc_params` were never reported, so every
+  `terraform plan` showed an in-place update. They are now stored and returned with
+  the real API's defaults. None of them changes how a statement executes.
+- **SCIM ignored the `attributes` projection.** The provider reads a group with
+  `?attributes=displayName,externalId,entitlements`; returning the full object instead
+  broke its field-by-field mapping.
+
+Also fixed in the coverage tooling: `scripts/cli_coverage.py` scored all 8 Files API
+endpoints as missing. The SDK writes `/api/2.0/fs/files{path}` with the parameter
+carrying its own leading slash, and the normalizer produced a path matching no route.
+Those two paths are the only ones in the SDK shaped that way.
+
+### Changed
+
+- `docs/EMULATION_ROADMAP.md` now leads with the reachable-surface number and says why
+  the raw percentage understates progress. It previously repeated the raw figure
+  without qualification.
+- `docs/terraform.md` lists the resource types the conformance test covers, and states
+  plainly that nothing Terraform creates here is enforced — a plan that applies
+  cleanly says the shape of a config is right, not that its access control is.
+- `README.md` and the published site list grants, workspace admin and legacy SQL.
+
+### Notes
+
+Nothing added in this release is enforced. Grants, secret ACLs, IP access lists and
+cluster policies are stored and read back faithfully and checked nowhere; no IP is
+blocked, no init script runs, no notification is sent.
+
+Test suite: 378 passing, up from 338.
+
 ## [1.7.7] — 2026-09-15
 
 Expands API emulation coverage from 13.3% to 17.8% of the endpoints the
@@ -325,6 +398,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.7.8]: https://github.com/dmux/minilake/compare/v1.7.7...v1.7.8
 [1.7.7]: https://github.com/dmux/minilake/compare/v1.7.6...v1.7.7
 [1.7.6]: https://github.com/dmux/minilake/compare/v1.7.4...v1.7.6
 [1.7.4]: https://github.com/dmux/minilake/compare/v1.7.3...v1.7.4
