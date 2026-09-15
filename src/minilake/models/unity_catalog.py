@@ -243,3 +243,113 @@ class ListVolumesResponse(BaseModel):
     """Response to list volumes."""
 
     volumes: List[VolumeInfo] = Field(default_factory=list)
+
+
+class MetastoreAssignment(BaseModel):
+    """Response to GET /current-metastore-assignment.
+
+    Clients call this during setup to learn which metastore the workspace is
+    attached to. minilake has exactly one, synthetic metastore.
+    """
+
+    metastore_id: str
+    workspace_id: Optional[int] = None
+    default_catalog_name: Optional[str] = None
+
+
+class MetastoreInfo(BaseModel):
+    """A metastore, as returned by metastore_summary / metastores list and get."""
+
+    metastore_id: str
+    name: str
+    owner: Optional[str] = None
+    global_metastore_id: Optional[str] = None
+    cloud: Optional[str] = None
+    region: Optional[str] = None
+    storage_root: Optional[str] = None
+    privilege_model_version: Optional[str] = None
+    delta_sharing_scope: Optional[str] = None
+    external_access_enabled: Optional[bool] = None
+    created_at: Optional[int] = None
+    created_by: Optional[str] = None
+    updated_at: Optional[int] = None
+    updated_by: Optional[str] = None
+
+
+class ListMetastoresResponse(BaseModel):
+    metastores: List[MetastoreInfo] = []
+    next_page_token: Optional[str] = None
+
+
+class FunctionParameterInfo(BaseModel):
+    """One parameter of a UC function."""
+
+    name: str
+    type_text: Optional[str] = None
+    type_name: Optional[str] = None
+    type_json: Optional[str] = None
+    position: Optional[int] = None
+    comment: Optional[str] = None
+    parameter_mode: Optional[str] = None
+    parameter_type: Optional[str] = None
+    parameter_default: Optional[str] = None
+
+
+class FunctionParameterInfos(BaseModel):
+    parameters: Optional[List[FunctionParameterInfo]] = None
+
+
+class CreateFunctionRequest(BaseModel):
+    """Body of POST /functions.
+
+    The SDK nests the whole function under `function_info`, so that wrapper is
+    accepted alongside a flat body — real clients send the wrapper.
+    """
+
+    function_info: Optional[Dict] = None
+
+    class Config:
+        extra = "allow"
+
+
+class FunctionInfo(BaseModel):
+    """A UC function. `routine_definition` holds the SQL body."""
+
+    name: str
+    catalog_name: str
+    schema_name: str
+    full_name: Optional[str] = None
+    function_id: Optional[str] = None
+    metastore_id: Optional[str] = None
+    input_params: Optional[FunctionParameterInfos] = None
+    return_params: Optional[FunctionParameterInfos] = None
+    data_type: Optional[str] = None
+    full_data_type: Optional[str] = None
+    routine_body: Optional[str] = None
+    routine_definition: Optional[str] = None
+    parameter_style: Optional[str] = None
+    is_deterministic: Optional[bool] = None
+    sql_data_access: Optional[str] = None
+    is_null_call: Optional[bool] = None
+    security_type: Optional[str] = None
+    specific_name: Optional[str] = None
+    external_language: Optional[str] = None
+    comment: Optional[str] = None
+    properties: Optional[str] = None
+    owner: Optional[str] = None
+    created_at: Optional[int] = None
+    created_by: Optional[str] = None
+    updated_at: Optional[int] = None
+    updated_by: Optional[str] = None
+
+
+class UpdateFunctionRequest(BaseModel):
+    owner: Optional[str] = None
+
+    class Config:
+        extra = "allow"
+
+
+class ListFunctionsResponse(BaseModel):
+    functions: List[FunctionInfo] = []
+    next_page_token: Optional[str] = None

@@ -7,8 +7,13 @@ from pydantic import BaseModel, ConfigDict
 
 class CreateClusterRequest(BaseModel):
     """Accepts (and ignores) the many optional real-Databricks fields we don't
-    model (aws_attributes, docker_image, policy_id, ...) so real SDK/Terraform
-    payloads don't get rejected just for including them."""
+    model (aws_attributes, docker_image, ...) so real SDK/Terraform payloads
+    don't get rejected just for including them.
+
+    `policy_id` and `instance_pool_id` are the exception: those name resources
+    minilake now really has, so they are kept, validated on create, and reported
+    back — otherwise a cluster would silently forget the policy it was created
+    with and Terraform would see permanent drift."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -22,10 +27,26 @@ class CreateClusterRequest(BaseModel):
     spark_env_vars: Optional[Dict[str, str]] = None
     custom_tags: Optional[Dict[str, str]] = None
     autoscale: Optional[Dict[str, Any]] = None
+    policy_id: Optional[str] = None
+    instance_pool_id: Optional[str] = None
+    driver_instance_pool_id: Optional[str] = None
 
 
 class EditClusterRequest(CreateClusterRequest):
     cluster_id: str
+
+
+class UpdateClusterRequest(BaseModel):
+    """Partial edit. Unlike `edit`, only the fields named in `update_mask` are
+    applied — which is what makes it safe to change one setting without resending
+    (and thereby blanking) the rest of the spec."""
+
+    cluster_id: str
+    update_mask: Optional[str] = None
+    cluster: Optional[Dict[str, Any]] = None
+
+    class Config:
+        extra = "allow"
 
 
 class CreateClusterResponse(BaseModel):
@@ -53,6 +74,10 @@ class ClusterInfo(BaseModel):
     terminated_time: Optional[int] = None
     last_restarted_time: Optional[int] = None
     default_tags: Optional[Dict[str, str]] = None
+    pinned_by_user_name: Optional[str] = None
+    policy_id: Optional[str] = None
+    instance_pool_id: Optional[str] = None
+    driver_instance_pool_id: Optional[str] = None
 
 
 class ListClustersResponse(BaseModel):

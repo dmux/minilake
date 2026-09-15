@@ -17,11 +17,15 @@ from fastapi import APIRouter, Query
 
 from minilake.errors import DatabricksError
 from minilake.models.secrets import (
+    AclItem,
     CreateScopeRequest,
+    DeleteAclRequest,
     DeleteScopeRequest,
     DeleteSecretRequest,
+    ListAclsResponse,
     ListScopesResponse,
     ListSecretsResponse,
+    PutAclRequest,
     PutSecretRequest,
     SecretMetadata,
     SecretScope,
@@ -30,8 +34,15 @@ from minilake.models.secrets import (
 router = APIRouter(prefix="/api/2.0/secrets", tags=["secrets"])
 
 _state: Dict[str, Any] = {
-    "scopes": {},  # scope_name -> {"secrets": {key: {"value": str, "updated_at": int}}}
+    # scope_name -> {"secrets": {key: {...}}, "acls": {principal: permission}}
+    "scopes": {},
 }
+
+# Valid values for an ACL permission, matching the SDK's AclPermission enum.
+_ACL_PERMISSIONS = {"READ", "WRITE", "MANAGE"}
+
+# Every scope's creator holds MANAGE. There is one user here, so this is who that is.
+_DEFAULT_MANAGE_PRINCIPAL = "users"
 
 
 @router.post("/scopes/create")
@@ -40,7 +51,10 @@ async def create_scope(req: CreateScopeRequest) -> dict:
         raise DatabricksError(
             error_code="RESOURCE_ALREADY_EXISTS", message=f"Scope '{req.scope}' already exists", status_code=400
         )
-    _state["scopes"][req.scope] = {"secrets": {}}
+    _state["scopes"][req.scope] = {
+        "secrets": {},
+        "acls": {req.initial_manage_principal or _DEFAULT_MANAGE_PRINCIPAL: "MANAGE"},
+    }
     return {}
 
 
@@ -105,6 +119,78 @@ async def get_secret(scope: str = Query(...), key: str = Query(...)) -> dict:
         ),
         status_code=400,
     )
+
+
+# ============================================================================
+# Scope ACLs
+# ============================================================================
+#
+# Like the Permissions API, these are recorded but never enforced: minilake has one
+# user and no authentication, so there is nobody for an ACL to exclude. They are
+# stored and read back faithfully because Terraform's `databricks_secret_acl` and
+# any code that asserts on a scope's grants need them to round-trip.
+
+
+def _scope_or_404(scope: str) -> Dict[str, Any]:
+    stored = _state["scopes"].get(scope)
+    if stored is None:
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Scope '{scope}' not found",
+            status_code=404,
+        )
+    stored.setdefault("acls", {})
+    return stored
+
+
+@router.post("/acls/put")
+async def put_acl(req: PutAclRequest) -> dict:
+    """Grant a principal a permission on a scope."""
+    stored = _scope_or_404(req.scope)
+    permission = (req.permission or "").upper()
+    if permission not in _ACL_PERMISSIONS:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=(f"Invalid permission '{req.permission}'. Expected one of: {', '.join(sorted(_ACL_PERMISSIONS))}"),
+            status_code=400,
+        )
+    stored["acls"][req.principal] = permission
+    return {}
+
+
+@router.get("/acls/get", response_model=AclItem)
+async def get_acl(scope: str = Query(...), principal: str = Query(...)) -> AclItem:
+    """Get one principal's permission on a scope."""
+    stored = _scope_or_404(scope)
+    permission = stored["acls"].get(principal)
+    if permission is None:
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Principal '{principal}' has no ACL on scope '{scope}'",
+            status_code=404,
+        )
+    return AclItem(principal=principal, permission=permission)
+
+
+@router.get("/acls/list", response_model=ListAclsResponse)
+async def list_acls(scope: str = Query(...)) -> ListAclsResponse:
+    """List every ACL on a scope."""
+    stored = _scope_or_404(scope)
+    return ListAclsResponse(items=[AclItem(principal=p, permission=perm) for p, perm in stored["acls"].items()])
+
+
+@router.post("/acls/delete")
+async def delete_acl(req: DeleteAclRequest) -> dict:
+    """Revoke a principal's permission on a scope."""
+    stored = _scope_or_404(req.scope)
+    if req.principal not in stored["acls"]:
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Principal '{req.principal}' has no ACL on scope '{req.scope}'",
+            status_code=404,
+        )
+    del stored["acls"][req.principal]
+    return {}
 
 
 def resolve_secret_value(scope: str, key: str) -> str:

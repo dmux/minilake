@@ -42,3 +42,25 @@ class SecretMetadata(BaseModel):
 
 class ListSecretsResponse(BaseModel):
     secrets: List[SecretMetadata] = Field(default_factory=list)
+
+
+class AclItem(BaseModel):
+    """A principal's permission on a secret scope."""
+
+    principal: str
+    permission: str
+
+
+class PutAclRequest(BaseModel):
+    scope: str
+    principal: str
+    permission: str
+
+
+class DeleteAclRequest(BaseModel):
+    scope: str
+    principal: str
+
+
+class ListAclsResponse(BaseModel):
+    items: List[AclItem] = Field(default_factory=list)
