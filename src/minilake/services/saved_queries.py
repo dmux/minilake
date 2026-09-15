@@ -90,6 +90,24 @@ def _resolve_display_name(display_name: Optional[str]) -> str:
     return f"{base} ({suffix})"
 
 
+def resolve_query_text(query_id: str) -> str:
+    """Return a saved query's SQL text, for callers that execute it.
+
+    Exported for `jobs.sql_task.query`: a saved query is metadata here, but the
+    text it stores is real SQL, and running it through the Statement Execution
+    path is what makes the task honest rather than SKIPPED.
+    """
+    stored = _get_or_404(query_id)
+    query_text = (stored.get("query_text") or "").strip()
+    if not query_text:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=f"Query '{query_id}' has no query_text to run",
+            status_code=400,
+        )
+    return query_text
+
+
 @router.post("/queries", response_model=Query)
 async def create_query(req: CreateQueryRequest) -> Query:
     """Create a saved query."""

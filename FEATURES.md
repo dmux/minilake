@@ -4,6 +4,10 @@
 
 **minilake** is a local Databricks API emulator backed by DuckDB for real SQL execution. This document details all implemented features, APIs, and their current status.
 
+**Coverage:** 208 of the 1168 endpoints the `databricks-sdk` calls (17.8%), measured — see
+[docs/CLI_COVERAGE.md](docs/CLI_COVERAGE.md) for the generated map and
+[docs/EMULATION_ROADMAP.md](docs/EMULATION_ROADMAP.md) for what to build next.
+
 **Latest Update:** 2026-09-08
 **Version:** 1.7.6 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
@@ -448,6 +452,36 @@ after each item, run via
 
 ---
 
+### 8a. **Unity Catalog — Metastore & Functions** ✅
+
+**Module:** `minilake/services/unity_catalog.py`
+**Endpoints:**
+
+- `GET /api/2.1/unity-catalog/current-metastore-assignment` — the metastore this workspace uses
+- `GET /api/2.1/unity-catalog/metastore_summary` — its details
+- `GET /api/2.1/unity-catalog/metastores` and `/metastores/{id}` — list / get
+- `POST` / `GET` `/api/2.1/unity-catalog/functions`, and `GET` / `PATCH` / `DELETE` `/functions/{full_name}`
+
+**Key Features:**
+
+- ✅ One synthetic metastore with stable ids — clients cache the assignment, so they
+  must not move between calls. `current-metastore-assignment` is small but load-bearing:
+  several clients call it during setup and previously gave up at the 501 before ever
+  reaching a catalog
+- ✅ **A SQL function is created as a real DuckDB `MACRO`** inside the catalog's own
+  attached database, so a function registered through the UC API is then callable from
+  the Statement Execution API by its three-part name (`SELECT cat.sch.fn(100)`) — not
+  metadata-only. Deleting it drops the macro too
+- ⚠️ An `EXTERNAL` function (Python/Java UDF) has no DuckDB counterpart and is stored as
+  metadata only; calling one fails, which is the honest outcome
+- 🚫 A workspace here has exactly one metastore and cannot be reassigned, so metastore
+  create/update/delete are not implemented
+
+**Status:** ✅ Complete and tested — `tests/unity_catalog/test_metastores.py`,
+`tests/unity_catalog/test_functions.py`
+
+---
+
 ### 9. **Workspace — Real File-Backed Notebook Storage** ✅
 
 **Module:** `minilake/services/workspace.py`
@@ -496,8 +530,9 @@ after each item, run via
 
 - ✅ `notebook_task` — runs the referenced `.py` workspace file via `spark-submit` (or subprocess)
 - ✅ `spark_python_task` — same, for `python_file`
-- ✅ `sql_task.file` — executes for real via minilake's own SQL engine (no container needed); `sql_task.query`/`dashboard`/`alert` `SKIPPED` (no Queries API)
-- ⚠️ Any other task type (`dbt_task`, `pipeline_task`, ...) is accepted but marked `SKIPPED` at run time, not faked
+- ✅ `sql_task.file`, `sql_task.query` and `sql_task.alert` — all execute for real via minilake's own SQL engine (no container needed). A `query` resolves the saved query's text through the Queries API; an `alert` re-runs the watched query and evaluates its condition. Only `sql_task.dashboard` is `SKIPPED` (no Dashboards API)
+- ⚠️ Any other task type (`dbt_task`, `pipeline_task`, `sql_task.dashboard`, ...) is accepted but marked `SKIPPED` at run time, not faked
+- ✅ `POST /api/2.2/jobs/runs/submit` — one-shot runs that carry their tasks inline and belong to no job (the path `databricks bundle run` and most CI code take). Reuses the same DAG scheduler as `run-now`, and honours `idempotency_token` so a repeated submit returns the original run
 
 **Real state machine:** `PENDING → RUNNING → TERMINATED`, with `result_state` (`SUCCESS`/`FAILED`/`TIMEDOUT`/`CANCELED`) derived from the container's actual exit code — not a fixed delay or canned response. Runtime parameters (`python_params`, `notebook_params`, `job_parameters`) are passed as real argv to the executed script.
 
@@ -512,6 +547,30 @@ after each item, run via
 - ⚠️ Job/run history survives a restart only when `MINILAKE_PERSIST=1` (see Persistence below) — running job containers are not resumed, only completed run records are restored
 
 **Status:** ✅ Complete and tested (`tests/test_jobs.py`, `tests/test_docker_executor.py` — real container/subprocess execution, DAG scheduling, secret injection, `sql_task`)
+
+---
+
+### 10a. **Alerts** ✅
+
+**Module:** `minilake/services/alerts.py`
+**Endpoints:** `POST` / `GET` `/api/2.0/sql/alerts`, and `GET` / `PATCH` / `DELETE`
+`/api/2.0/sql/alerts/{alert_id}`
+
+**Key Features:**
+
+- ✅ Real CRUD, mirroring `saved_queries.py` (`update_mask` honoured,
+  `auto_resolve_display_name` supported)
+- ✅ **Conditions are really evaluated**: `evaluate_alert()` runs the watched query
+  through the same SQL engine the Statement Execution API uses and compares the first
+  row against the threshold, so an alert's state reflects real data. Supports
+  `EQUAL`, `NOT_EQUAL`, `GREATER_THAN[_OR_EQUAL]`, `LESS_THAN[_OR_EQUAL]`, `IS_NULL`,
+  `IS_NOT_NULL`, and `empty_result_state` for a query returning no rows
+- ✅ Backs `sql_task.alert` in Jobs; a fired alert is a *successful* task, with the
+  outcome recorded in the run output
+- 🚫 No scheduler and no notifications — an alert is evaluated on demand, never on its
+  own, and nothing is ever sent anywhere
+
+**Status:** ✅ Complete and tested — `tests/test_alerts.py`, `tests/test_jobs_sql_tasks.py`
 
 ---
 
@@ -699,12 +758,25 @@ verified by executing them non-interactively end to end
 
 ---
 
+#### Scope ACLs
+
+- `POST /api/2.0/secrets/acls/put` / `delete`, `GET /api/2.0/secrets/acls/get` / `list`
+- ✅ Real CRUD; creating a scope grants its `initial_manage_principal` (default `users`) `MANAGE`
+- 🚫 Recorded but **never enforced** — there is one user and no authentication, so there
+  is nobody for an ACL to exclude. They exist so Terraform's `databricks_secret_acl`
+  round-trips instead of reporting permanent drift
+
+**Status:** ✅ Complete and tested — `tests/test_secret_acls.py`
+
+---
+
 ### 16. **Clusters** ✅
 
 **Module:** `minilake/services/clusters.py`
 **Endpoints:**
 
-- `POST /api/2.1/clusters/create` / `edit` / `start` / `delete` (terminate) / `permanent-delete` / `restart` / `resize` / `change-owner` — Cluster CRUD + lifecycle
+- `POST /api/2.1/clusters/create` / `edit` / `update` / `start` / `delete` (terminate) / `permanent-delete` / `restart` / `resize` / `change-owner` — Cluster CRUD + lifecycle
+- `POST /api/2.1/clusters/pin` / `unpin` — Pin a cluster against the retention sweep
 - `GET /api/2.1/clusters/get` / `list` — Read clusters
 - `POST /api/2.1/clusters/events` — Event log (always empty — no real event log is kept)
 - `GET /api/2.1/clusters/list-node-types` / `list-zones` / `spark-versions` — Static reference data
@@ -713,6 +785,9 @@ verified by executing them non-interactively end to end
 
 - ✅ Real state machine: `PENDING → RUNNING`, `TERMINATING → TERMINATED`, `RESTARTING → RUNNING`, `RESIZING → RUNNING`, driven by real `asyncio.sleep` delays (`MINILAKE_CLUSTER_START_DELAY`/`MINILAKE_CLUSTER_TERMINATE_DELAY`) — not an instant canned response, so client code that polls for RUNNING (as the real SDK's `create_and_wait()` does) exercises real polling logic
 - ✅ Terminated clusters are kept for history (matching real Databricks), only removed via `permanent-delete`
+- ✅ `update` is a *partial* edit honouring `update_mask`, so changing one setting does not blank the rest of the spec the way a full `edit` would; an unknown mask field is rejected rather than silently ignored
+- ✅ `policy_id` / `instance_pool_id` are retained, reported back, and validated on create — a cluster naming one that does not exist is rejected
+- ⚠️ `pin`/`unpin` are recorded but change no behaviour: nothing here ever sweeps terminated clusters. They exist because Terraform tracks the flag as drift
 - 🚫 **No real Spark compute** — this is metadata + state transitions only, by design (real compute for Jobs comes from sibling Docker containers — see Jobs — this is intentionally not duplicated here for Clusters, since nothing in minilake routes job execution through a persistent cluster)
 
 **Status:** ✅ Complete and tested — `tests/test_clusters.py`
@@ -734,6 +809,71 @@ verified by executing them non-interactively end to end
 - ⚠️ `permissionLevels` returns a generic level catalog, not accurate per-object-type semantics (real Databricks varies these by object type) — a documented simplification
 
 **Status:** ✅ Complete and tested — `tests/test_permissions.py`
+
+---
+
+### 17a. **SCIM — Users, Groups, Service Principals** ✅
+
+**Module:** `minilake/services/scim.py`
+**Endpoints:** `POST` / `GET` `/api/2.0/preview/scim/v2/{Users,Groups,ServicePrincipals}`,
+plus `GET` / `PUT` / `PATCH` / `DELETE` on `/{id}` for each — 18 routes.
+
+**Key Features:**
+
+- ✅ Real CRUD for all three resource types, with SCIM's camelCase wire shape
+  (`userName`, `displayName`, capital-R `Resources`)
+- ✅ `PATCH` supports the forms clients actually send: `replace` on an attribute, and
+  `add`/`remove` on multi-valued attributes — including the `members[value eq "id"]`
+  path Terraform uses to drop one group member
+- ✅ `filter` supports `attribute eq/co/sw "value"`; anything else is rejected loudly
+  rather than silently returning everything
+- ✅ Unique-attribute conflicts (`userName`, `displayName`, `applicationId`) return 409
+- ✅ The `identity.py` user is seeded into Users, so `Me` and `Users` never disagree
+- 🚫 **No authentication or access control.** Identities are records, not credentials:
+  creating a user makes no way to log in, deleting one revokes nothing
+
+**Status:** ✅ Complete and tested — `tests/test_scim.py`
+
+---
+
+### 17b. **Tokens** ✅
+
+**Module:** `minilake/services/tokens.py`
+**Endpoints:** `POST /api/2.0/token/create`, `GET /api/2.0/token/list`,
+`POST /api/2.0/token/delete`
+
+**Key Features:**
+
+- ✅ The value is returned exactly once, from `create`, as in the real API — the stored
+  record never carries it
+- ✅ `lifetime_seconds` honoured; omitted or `-1` means no expiry
+- 🚫 Tokens authenticate nothing (minilake accepts any bearer token by design), so
+  revoking one locks nobody out. These exist because tooling mints a token as a setup
+  step and stops if that step fails
+
+**Status:** ✅ Complete and tested — `tests/test_tokens.py`
+
+---
+
+### 17c. **Cluster Policies & Instance Pools** ✅
+
+**Modules:** `minilake/services/cluster_policies.py`, `minilake/services/instance_pools.py`
+**Endpoints:** `POST|GET /api/2.0/policies/clusters/{create,edit,get,list,delete}`,
+`POST|GET /api/2.0/instance-pools/{create,edit,get,list,delete}`
+
+**Key Features:**
+
+- ✅ Real CRUD; a policy `definition` is validated as JSON, so the most common
+  hand-authoring mistake fails at create instead of never matching
+- ✅ Clusters retain and validate `policy_id` / `instance_pool_id` — a cluster naming
+  one that does not exist is rejected, and one in use cannot be deleted
+- ✅ `instance-pools` rejects a `node_type_id` change on an existing pool, as the real
+  API does
+- 🚫 **Neither is enforced.** No policy constrains a cluster minilake never provisions,
+  and pool `stats` are permanently zero. They exist so a bundle or Terraform config
+  naming one resolves
+
+**Status:** ✅ Complete and tested — `tests/test_cluster_policies.py`
 
 ---
 
@@ -858,19 +998,29 @@ These APIs are out of scope for MVP and return clear 501 "Not Implemented" error
 
 ### Out-of-Scope API Groups
 
-The following 30+ SDK service modules are **not emulated** and return `501 {"error_code": "NOT_IMPLEMENTED", ...}`:
+The following SDK service modules are **not emulated** and return
+`501 {"error_code": "NOT_IMPLEMENTED", ...}`:
 
 | Category | Modules |
 |----------|---------|
 | **Billing & Cost** | `billing`, `usage` |
-| **AI & ML** | `ml`, `model_registry`, `vectorsearch`, `feature_store` |
+| **AI & ML** | `ml` (MLflow), `model_registry`, `vectorsearch`, `feature_store` |
 | **Data Quality** | `dataquality`, `qualitymonitor` |
-| **Advanced Analytics** | `dashboards`, `alerts` |
+| **Advanced Analytics** | `dashboards` (incl. Lakeview and Genie) |
 | **Streaming & Real-time** | `knowledgeassistants`, `aisearch` |
-| **Marketplace** | `marketplace`, `sharing` |
+| **Marketplace** | `marketplace`, `sharing` (Delta Sharing) |
 | **DevOps & Config** | `provisioning`, `settings`, `settingsv2` |
 | **Network & Security** | `networking`, `cleanrooms` |
 | **Specialized** | `apps`, `agentbricks`, `supervisoragents`, `pipelines`, `serving`, `bundles`, `disasterrecovery`, `postgres`, `oauth2` |
+
+For the exact, measured picture — every endpoint the SDK calls, probed through the real
+`databricks` CLI — see [docs/CLI_COVERAGE.md](docs/CLI_COVERAGE.md), regenerated by
+`scripts/cli_coverage.py`. [docs/EMULATION_ROADMAP.md](docs/EMULATION_ROADMAP.md) ranks
+what is worth closing next.
+
+> `alerts` used to be listed here. It is now implemented (see §10a), along with SCIM
+> identities, tokens, cluster policies, instance pools, UC functions and the metastore
+> read endpoints.
 
 **Behavior:** All unmapped `/api/*` paths return:
 
@@ -989,7 +1139,7 @@ Running job containers and open SQL statement cursors are not resumable across a
 #### Jobs
 
 - ✅ **Real DAG scheduling**: `depends_on` + `run_if` evaluated against direct dependencies; independent branches run concurrently (T2.6)
-- ✅ **`sql_task.file` executes for real** via minilake's own SQL engine (T1.1); `sql_task.query`/`dashboard`/`alert` still `SKIPPED` (no Queries API)
+- ✅ **`sql_task.file`, `.query` and `.alert` execute for real** via minilake's own SQL engine; only `sql_task.dashboard` is still `SKIPPED` (no Dashboards API)
 - ✅ **Secrets resolved into real env vars**: `{{secrets/scope/key}}` in `new_cluster.spark_env_vars` (T2.8)
 - ⚠️ **Job history survives restart only with `MINILAKE_PERSIST=1`**: running containers are not resumed, only completed run records
 - ⚠️ **Requires Docker socket for `notebook_task`/`spark_python_task`**: falls back to a plain-subprocess executor with `MINILAKE_JOB_EXECUTOR=subprocess` if no Docker socket is available (T1.4)

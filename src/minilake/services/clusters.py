@@ -38,6 +38,7 @@ from minilake.models.clusters import (
     ResizeClusterRequest,
     RestartClusterRequest,
     SparkVersion,
+    UpdateClusterRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/2.1/clusters", tags=["clusters"])
 
 _state: Dict[str, Any] = {"clusters": {}}
+
+
+def _validate_references(policy_id: Any, instance_pool_id: Any) -> None:
+    """Reject a cluster that names a policy or pool which does not exist.
+
+    Both are real resources here now, so a typo should fail at create time rather
+    than leaving a cluster pointing at nothing.
+    """
+    from minilake.services import cluster_policies, instance_pools
+
+    if policy_id and policy_id not in cluster_policies._state["policies"]:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=f"Cluster policy '{policy_id}' not found",
+            status_code=400,
+        )
+    if instance_pool_id and instance_pool_id not in instance_pools._state["pools"]:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=f"Instance pool '{instance_pool_id}' not found",
+            status_code=400,
+        )
 
 
 def _get_or_404(cluster_id: str) -> dict:
@@ -81,6 +104,8 @@ def _to_info(cluster: dict) -> ClusterInfo:
 async def create_cluster(req: CreateClusterRequest) -> CreateClusterResponse:
     """Create a cluster. Starts in PENDING, transitions to RUNNING for real
     after MINILAKE_CLUSTER_START_DELAY seconds."""
+    _validate_references(req.policy_id, req.instance_pool_id)
+
     cluster_id = str(uuid.uuid4())[:8]
     cluster = {
         "cluster_id": cluster_id,
@@ -94,6 +119,9 @@ async def create_cluster(req: CreateClusterRequest) -> CreateClusterResponse:
         "spark_env_vars": req.spark_env_vars,
         "custom_tags": req.custom_tags,
         "autoscale": req.autoscale,
+        "policy_id": req.policy_id,
+        "instance_pool_id": req.instance_pool_id,
+        "driver_instance_pool_id": req.driver_instance_pool_id,
         "state": "PENDING",
         "state_message": "Starting cluster",
         "creator_user_name": "minilake-user",
@@ -122,7 +150,83 @@ async def edit_cluster(req: EditClusterRequest) -> ClusterInfo:
     cluster["spark_env_vars"] = req.spark_env_vars
     cluster["custom_tags"] = req.custom_tags
     cluster["autoscale"] = req.autoscale
+    _validate_references(req.policy_id, req.instance_pool_id)
+    cluster["policy_id"] = req.policy_id
+    cluster["instance_pool_id"] = req.instance_pool_id
+    cluster["driver_instance_pool_id"] = req.driver_instance_pool_id
     return _to_info(cluster)
+
+
+# Fields `update` may touch, matching the SDK's UpdateClusterResource. Anything else
+# in the mask is rejected rather than silently ignored, so a typo in a Terraform or
+# SDK call surfaces as an error instead of a setting that never took effect.
+_UPDATABLE_FIELDS = {
+    "cluster_name",
+    "spark_version",
+    "node_type_id",
+    "driver_node_type_id",
+    "num_workers",
+    "autotermination_minutes",
+    "spark_conf",
+    "spark_env_vars",
+    "custom_tags",
+    "autoscale",
+    "policy_id",
+    "instance_pool_id",
+    "driver_instance_pool_id",
+    "single_user_name",
+    "data_security_mode",
+    "runtime_engine",
+}
+
+
+@router.post("/update", response_model=ClusterInfo)
+async def update_cluster(req: UpdateClusterRequest) -> ClusterInfo:
+    """Partially update a cluster, honouring `update_mask`."""
+    cluster = _get_or_404(req.cluster_id)
+
+    if not req.update_mask:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message="update_mask is required",
+            status_code=400,
+        )
+
+    fields = [f.strip() for f in req.update_mask.split(",") if f.strip()]
+    unknown = [f for f in fields if f not in _UPDATABLE_FIELDS and f != "*"]
+    if unknown:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message=f"Unknown update_mask field(s): {', '.join(unknown)}",
+            status_code=400,
+        )
+
+    payload = req.cluster or {}
+    updates = payload if "*" in fields else {f: payload.get(f) for f in fields if f in payload}
+    cluster.update(updates)
+
+    logger.info(f"Updated cluster {req.cluster_id} (fields: {', '.join(fields)})")
+    return _to_info(cluster)
+
+
+@router.post("/pin")
+async def pin_cluster(req: ClusterIdRequest) -> dict:
+    """Pin a cluster so it survives the 30-day retention sweep.
+
+    Nothing here ever sweeps, so pinning changes no behaviour — it is recorded and
+    reported back because Terraform tracks it as drift when it is not.
+    """
+    cluster = _get_or_404(req.cluster_id)
+    cluster["pinned_by_user_name"] = "minilake-user"
+    return {}
+
+
+@router.post("/unpin")
+async def unpin_cluster(req: ClusterIdRequest) -> dict:
+    """Unpin a cluster."""
+    cluster = _get_or_404(req.cluster_id)
+    cluster.pop("pinned_by_user_name", None)
+    return {}
 
 
 @router.post("/start", response_model=ClusterInfo)

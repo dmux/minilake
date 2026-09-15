@@ -15,17 +15,24 @@ from minilake.errors import DatabricksError
 from minilake.models.unity_catalog import (
     CatalogInfo,
     CreateCatalogRequest,
+    CreateFunctionRequest,
     CreateSchemaRequest,
     CreateTableRequest,
     CreateVolumeRequest,
+    FunctionInfo,
     ListCatalogsResponse,
+    ListFunctionsResponse,
+    ListMetastoresResponse,
     ListSchemasResponse,
     ListTablesResponse,
     ListVolumesResponse,
+    MetastoreAssignment,
+    MetastoreInfo,
     SchemaInfo,
     TableInfo,
     TemporaryCredentials,
     UpdateCatalogRequest,
+    UpdateFunctionRequest,
     UpdateSchemaRequest,
     UpdateTableRequest,
     UpdateVolumeRequest,
@@ -52,8 +59,77 @@ _state: Dict[str, Any] = {
     "schemas": {},
     "tables": {},
     "volumes": {},
+    "functions": {},
     "external_tables": {},
 }
+
+
+# The single synthetic metastore every workspace here is assigned to. Real Unity Catalog
+# makes this a per-region, per-account resource; minilake has one workspace and one
+# metastore, so the ids are constants rather than state. They must stay stable across a
+# restart because clients cache the assignment.
+METASTORE_ID = "00000000-0000-0000-0000-0000000000m1"
+METASTORE_NAME = "minilake-metastore"
+WORKSPACE_ID = 1234567890123456
+DEFAULT_CATALOG_NAME = "main"
+
+
+def _metastore_info() -> MetastoreInfo:
+    from minilake.services import identity
+
+    return MetastoreInfo(
+        metastore_id=METASTORE_ID,
+        name=METASTORE_NAME,
+        owner=identity.USER_NAME,
+        global_metastore_id=f"local:{METASTORE_ID}",
+        cloud="local",
+        region="local",
+        storage_root=str(settings.data_dir),
+        privilege_model_version="1.0",
+        delta_sharing_scope="INTERNAL",
+        external_access_enabled=False,
+        created_by=identity.USER_NAME,
+        updated_by=identity.USER_NAME,
+    )
+
+
+@router.get("/current-metastore-assignment", response_model=MetastoreAssignment)
+async def current_metastore_assignment() -> MetastoreAssignment:
+    """Get the metastore assigned to this workspace.
+
+    Small, but load-bearing: several clients (and the CLI's `metastores current`) call
+    this during setup, and before it existed they hit the 501 catch-all and gave up
+    before touching a catalog that works perfectly well.
+    """
+    return MetastoreAssignment(
+        metastore_id=METASTORE_ID,
+        workspace_id=WORKSPACE_ID,
+        default_catalog_name=DEFAULT_CATALOG_NAME,
+    )
+
+
+@router.get("/metastore_summary", response_model=MetastoreInfo)
+async def metastore_summary() -> MetastoreInfo:
+    """Get a summary of the workspace's metastore."""
+    return _metastore_info()
+
+
+@router.get("/metastores", response_model=ListMetastoresResponse)
+async def list_metastores() -> ListMetastoresResponse:
+    """List metastores. There is exactly one here, always."""
+    return ListMetastoresResponse(metastores=[_metastore_info()])
+
+
+@router.get("/metastores/{metastore_id}", response_model=MetastoreInfo)
+async def get_metastore(metastore_id: str) -> MetastoreInfo:
+    """Get a metastore by ID."""
+    if metastore_id != METASTORE_ID:
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Metastore '{metastore_id}' not found",
+            status_code=404,
+        )
+    return _metastore_info()
 
 
 def _get_volumes_dir() -> Path:
@@ -925,6 +1001,172 @@ async def delete_volume(full_name: str) -> dict[str, str]:
 
 
 # ============================================================================
+# Functions
+# ============================================================================
+#
+# A UC function with `routine_body: SQL` is real SQL, and DuckDB has a real
+# equivalent — a MACRO. So these are created for real inside the catalog's own
+# attached database, which means a function registered through the UC API is then
+# callable from the Statement Execution API by its three-part name. Registering it
+# only as metadata would have been the easier thing and the less useful one.
+#
+# An EXTERNAL function (Python/Java UDF) has no DuckDB counterpart and is stored as
+# metadata only; calling one fails in DuckDB, which is the honest outcome.
+
+
+def _function_or_404(full_name: str) -> Dict[str, Any]:
+    function = _state["functions"].get(full_name)
+    if function is None:
+        raise DatabricksError(
+            error_code="RESOURCE_DOES_NOT_EXIST",
+            message=f"Function '{full_name}' does not exist",
+            status_code=404,
+        )
+    return function
+
+
+def _macro_signature(function: Dict[str, Any]) -> str:
+    """Render `name(a, b)` from the function's declared input params."""
+    params = ((function.get("input_params") or {}).get("parameters")) or []
+    ordered = sorted(params, key=lambda p: p.get("position") or 0)
+    names = [p["name"] for p in ordered]
+    return f'"{function["name"]}"({", ".join(names)})'
+
+
+async def _create_duckdb_macro(function: Dict[str, Any]) -> None:
+    """Create the DuckDB MACRO backing a SQL function, if one is possible."""
+    if (function.get("routine_body") or "").upper() != "SQL":
+        return
+    definition = (function.get("routine_definition") or "").strip()
+    if not definition:
+        return
+
+    pool = get_duckdb_pool()
+    if not pool:
+        return
+
+    catalog_name, schema_name = function["catalog_name"], function["schema_name"]
+    signature = _macro_signature(function)
+    sql = f'CREATE OR REPLACE MACRO "{catalog_name}"."{schema_name}".{signature} AS ({definition})'
+    try:
+        conn = await pool.get_uc_connection()
+        async with await pool.get_uc_lock():
+            conn.execute(sql)
+    except Exception as e:
+        # The metadata is still registered — a function DuckDB cannot express is a
+        # degraded function, not a failed create. Loud in the log, not on the wire.
+        logger.warning(f"Could not create DuckDB macro for {function['full_name']}: {e}")
+
+
+async def _drop_duckdb_macro(function: Dict[str, Any]) -> None:
+    pool = get_duckdb_pool()
+    if not pool:
+        return
+    full = f'"{function["catalog_name"]}"."{function["schema_name"]}"."{function["name"]}"'
+    try:
+        conn = await pool.get_uc_connection()
+        async with await pool.get_uc_lock():
+            conn.execute(f"DROP MACRO IF EXISTS {full}")
+    except Exception as e:
+        logger.warning(f"Could not drop DuckDB macro for {function['full_name']}: {e}")
+
+
+@router.post("/functions", response_model=FunctionInfo)
+async def create_function(req: CreateFunctionRequest) -> FunctionInfo:
+    """Create a function, and a real DuckDB macro behind it when it is SQL."""
+    payload = req.function_info or req.model_dump(exclude_none=True, exclude={"function_info"})
+
+    name = payload.get("name")
+    catalog_name = payload.get("catalog_name")
+    schema_name = payload.get("schema_name")
+    if not name or not catalog_name or not schema_name:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message="name, catalog_name and schema_name are required",
+            status_code=400,
+        )
+
+    validate_identifier(name, "function")
+    schema_full = f"{catalog_name}.{schema_name}"
+    if schema_full not in _state["schemas"]:
+        raise DatabricksError(
+            error_code="INVALID_REQUEST",
+            message=f"Schema '{schema_full}' does not exist",
+            status_code=400,
+        )
+
+    full_name = f"{catalog_name}.{schema_name}.{name}"
+    if full_name in _state["functions"]:
+        raise DatabricksError(
+            error_code="ALREADY_EXISTS",
+            message=f"Function '{full_name}' already exists",
+            status_code=409,
+        )
+
+    now_ms = int(time.time() * 1000)
+    function = {
+        **payload,
+        "full_name": full_name,
+        "function_id": str(uuid.uuid4()),
+        "metastore_id": METASTORE_ID,
+        "specific_name": payload.get("specific_name") or name,
+        "owner": "minilake-user",
+        "created_at": now_ms,
+        "created_by": "minilake-user",
+        "updated_at": now_ms,
+        "updated_by": "minilake-user",
+    }
+    _state["functions"][full_name] = function
+    await _create_duckdb_macro(function)
+
+    logger.info(f"Created function: {full_name}")
+    return FunctionInfo(**function)
+
+
+@router.get("/functions", response_model=ListFunctionsResponse)
+async def list_functions(
+    catalog_name: str = Query(...),
+    schema_name: str = Query(...),
+    max_results: int = Query(None),
+) -> ListFunctionsResponse:
+    """List functions in a schema."""
+    matches = [
+        FunctionInfo(**f)
+        for f in _state["functions"].values()
+        if f["catalog_name"] == catalog_name and f["schema_name"] == schema_name
+    ]
+    if max_results:
+        matches = matches[:max_results]
+    return ListFunctionsResponse(functions=matches)
+
+
+@router.get("/functions/{full_name}", response_model=FunctionInfo)
+async def get_function(full_name: str) -> FunctionInfo:
+    """Get a function by its three-part name."""
+    return FunctionInfo(**_function_or_404(full_name))
+
+
+@router.patch("/functions/{full_name}", response_model=FunctionInfo)
+async def update_function(full_name: str, req: UpdateFunctionRequest) -> FunctionInfo:
+    """Update a function's owner. The real API allows nothing else here."""
+    function = _function_or_404(full_name)
+    if req.owner is not None:
+        function["owner"] = req.owner
+    function["updated_at"] = int(time.time() * 1000)
+    return FunctionInfo(**function)
+
+
+@router.delete("/functions/{full_name}")
+async def delete_function(full_name: str) -> dict:
+    """Delete a function and the macro behind it."""
+    function = _function_or_404(full_name)
+    await _drop_duckdb_macro(function)
+    del _state["functions"][full_name]
+    logger.info(f"Deleted function: {full_name}")
+    return {}
+
+
+# ============================================================================
 # State Management
 # ============================================================================
 
@@ -956,5 +1198,6 @@ async def reset() -> None:
         "schemas": {},
         "tables": {},
         "volumes": {},
+        "functions": {},
         "external_tables": {},
     }

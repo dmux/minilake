@@ -70,25 +70,47 @@ class SqlTaskFile(BaseModel):
 
 
 class SqlTaskQuery(BaseModel):
-    """A saved SQL query, referenced by ID (not supported — minilake has no
-    Queries API; sql_task.query/dashboard/alert are SKIPPED at run time)."""
+    """A saved SQL query, referenced by ID. Resolved through the Queries API."""
 
     query_id: str
+
+
+class SqlTaskAlert(BaseModel):
+    """An alert, referenced by ID. Running it re-runs the query it watches and
+    evaluates the alert's condition against the result."""
+
+    alert_id: str
+    pause_subscriptions: Optional[bool] = None
+
+    class Config:
+        extra = "allow"
+
+
+class SqlTaskDashboard(BaseModel):
+    """A legacy SQL dashboard, referenced by ID. Not supported — minilake has no
+    Dashboards API, so a task using it is SKIPPED rather than faked."""
+
+    dashboard_id: str
+
+    class Config:
+        extra = "allow"
 
 
 class SqlTask(BaseModel):
     """Runs a SQL statement or file against a warehouse.
 
-    Only `file` executes for real (it's just a .sql file in the workspace,
-    which minilake already stores and can run through its own SQL engine —
-    no container needed). `query`/`dashboard`/`alert` reference Databricks'
-    saved Queries/Dashboards/Alerts features, which minilake doesn't
-    implement, so tasks using them are SKIPPED rather than faked.
+    `file`, `query` and `alert` all execute for real against minilake's own SQL
+    engine: a file is a .sql file in the workspace, a query is a saved query's
+    text, and an alert is the query it watches plus a condition evaluated over
+    the first row. `dashboard` references Databricks' Dashboards feature, which
+    minilake doesn't implement, so those tasks are SKIPPED rather than faked.
     """
 
     warehouse_id: str
     file: Optional[SqlTaskFile] = None
     query: Optional[SqlTaskQuery] = None
+    alert: Optional[SqlTaskAlert] = None
+    dashboard: Optional[SqlTaskDashboard] = None
     parameters: Optional[Dict[str, str]] = None
 
     class Config:
@@ -215,6 +237,27 @@ class RunNowRequest(BaseModel):
 class RunNowResponse(BaseModel):
     run_id: int
     number_in_job: Optional[int] = 1
+
+
+class SubmitRunRequest(BaseModel):
+    """Request body for POST /jobs/runs/submit — a one-shot run.
+
+    Carries its tasks inline instead of naming a job_id. `idempotency_token` is
+    honoured: repeating a submit with the same token returns the original run_id
+    rather than starting a second one, which is the whole point of the field.
+    """
+
+    tasks: Optional[List[Task]] = None
+    run_name: Optional[str] = None
+    idempotency_token: Optional[str] = None
+    timeout_seconds: Optional[int] = None
+
+    class Config:
+        extra = "allow"
+
+
+class SubmitRunResponse(BaseModel):
+    run_id: int
 
 
 class RunState(BaseModel):
