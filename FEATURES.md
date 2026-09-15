@@ -10,7 +10,7 @@ the *reachable* surface, once the blocks this project deliberately skips are exc
 [docs/EMULATION_ROADMAP.md](docs/EMULATION_ROADMAP.md) for what to build next.
 
 **Latest Update:** 2026-09-15
-**Version:** 1.7.7 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
+**Version:** 1.7.8 — see [CHANGELOG.md](CHANGELOG.md) for what changed between releases
 **Project Status:** Core SQL + UC (per-catalog isolation) + Jobs (real DAG scheduling) + Workspace + DBFS + Files + Secrets + Clusters + Permissions + real Spark/Delta execution all working and tested; `MINILAKE_PERSIST` is now actually wired in. See [Known Limitations](#known-limitations) for what's intentionally not built (this is a single-dev local tool, not a multi-tenant server)
 
 ---
