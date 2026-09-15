@@ -21,8 +21,26 @@ class CreateWarehouseResponse(BaseModel):
     id: Optional[str] = None
 
 
+class OdbcParams(BaseModel):
+    """Connection parameters a BI tool would use. Reported because the Terraform
+    provider treats a missing `odbc_params` as a change to apply on every plan."""
+
+    hostname: Optional[str] = None
+    host: Optional[str] = None
+    path: Optional[str] = None
+    port: Optional[int] = None
+    protocol: Optional[str] = None
+
+
 class GetWarehouseResponse(BaseModel):
-    """Warehouse metadata."""
+    """Warehouse metadata.
+
+    The config fields below are accepted, stored and reported back, but none of them
+    changes behaviour: statements run on DuckDB regardless of cluster size, photon or
+    autostop. They are here because a client that sets a value and reads back a
+    different one sees drift — `terraform plan` reported a permanent in-place update
+    for every warehouse until these were returned.
+    """
 
     id: str
     name: str
@@ -31,6 +49,16 @@ class GetWarehouseResponse(BaseModel):
     comment: Optional[str] = None
     created_at: Optional[int] = None
     updated_at: Optional[int] = None
+    auto_stop_mins: Optional[int] = None
+    min_num_clusters: Optional[int] = None
+    max_num_clusters: Optional[int] = None
+    num_clusters: Optional[int] = None
+    enable_photon: Optional[bool] = None
+    enable_serverless_compute: Optional[bool] = None
+    spot_instance_policy: Optional[str] = None
+    warehouse_type: Optional[str] = None
+    creator_name: Optional[str] = None
+    odbc_params: Optional[OdbcParams] = None
 
     class Config:
         extra = "allow"
@@ -42,6 +70,18 @@ class CreateWarehouseRequest(BaseModel):
     name: str
     cluster_size: str = "Small"
     comment: Optional[str] = None
+    auto_stop_mins: Optional[int] = None
+    min_num_clusters: Optional[int] = None
+    max_num_clusters: Optional[int] = None
+    enable_photon: Optional[bool] = None
+    enable_serverless_compute: Optional[bool] = None
+    spot_instance_policy: Optional[str] = None
+    warehouse_type: Optional[str] = None
+    tags: Optional[dict] = None
+    channel: Optional[dict] = None
+
+    class Config:
+        extra = "allow"
 
 
 class ListWarehousesResponse(BaseModel):

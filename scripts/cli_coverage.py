@@ -187,6 +187,20 @@ def sdk_service_dir() -> Path:
 API_CALL_RE = re.compile(r'\.do\(\s*"([A-Z]+)"\s*,\s*f?"(/api/[0-9.]+/[^"]+)"', re.S)
 
 
+# A handful of SDK paths concatenate the parameter straight onto the segment, because the
+# value carries its own leading slash: `/api/2.0/fs/files{file_path}` is really
+# `/api/2.0/fs/files/Volumes/...`. Substituting the placeholder verbatim would produce
+# `fs/files__probe__`, which matches no route, and the endpoint would be scored missing
+# when it is implemented. Insert the separator those paths leave to the parameter.
+_GLUED_PARAM_RE = re.compile(r"(?<=[A-Za-z0-9])\{")
+
+
+def _normalize(raw: str) -> str:
+    """Turn an SDK path template into a concrete path to probe."""
+    raw = _GLUED_PARAM_RE.sub("/{", raw)
+    return re.sub(r"\{[^}]+\}", PROBE_PLACEHOLDER, raw).rstrip("/")
+
+
 def extract_sdk_endpoints(service_dir: Path) -> dict[str, set[tuple[str, str]]]:
     """Map each SDK service module to the (method, path) endpoints it calls."""
     by_module: dict[str, set[tuple[str, str]]] = {}
@@ -197,8 +211,7 @@ def extract_sdk_endpoints(service_dir: Path) -> dict[str, set[tuple[str, str]]]:
         for method, raw in API_CALL_RE.findall(path.read_text()):
             if JUNK_PATH_RE.match(raw):
                 continue
-            normalized = re.sub(r"\{[^}]+\}", PROBE_PLACEHOLDER, raw).rstrip("/")
-            found.add((method, normalized))
+            found.add((method, _normalize(raw)))
         if found:
             by_module[path.stem] = found
     return by_module

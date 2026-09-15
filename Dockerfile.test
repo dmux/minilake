@@ -37,6 +37,36 @@ RUN curl -fsSL -o /tmp/databricks.zip \
     rm /tmp/databricks.zip && \
     databricks --version
 
+# Terraform plus a local mirror of the Databricks provider, for
+# tests/terraform/test_terraform_conformance.py. Both are pinned: the conformance test
+# is only meaningful if it keeps testing the same provider, and a floating version would
+# turn an upstream release into a mysterious CI failure.
+#
+# `terraform init` normally reaches registry.terraform.io. Warming the plugin cache here
+# — where the build already has network — lets the test run `init -plugin-dir` against a
+# local mirror instead, so the suite needs no network for this.
+ARG TERRAFORM_VERSION=1.16.2
+ARG DATABRICKS_PROVIDER_VERSION=1.132.0
+# Deliberately NOT TF_PLUGIN_CACHE_DIR at runtime: the test passes this directory to
+# `terraform init -plugin-dir`, and if it were also the plugin cache, terraform would try
+# to install the provider from the directory into itself and fail. The cache variable is
+# set only for the warm-up below, which is what populates the mirror.
+ENV MINILAKE_TF_PROVIDER_MIRROR=/opt/tf-providers
+RUN curl -fsSL -o /tmp/terraform.zip \
+        "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" && \
+    python -c "import zipfile; zipfile.ZipFile('/tmp/terraform.zip').extract('terraform', '/usr/local/bin')" && \
+    chmod 755 /usr/local/bin/terraform && \
+    rm /tmp/terraform.zip && \
+    terraform version && \
+    mkdir -p "$MINILAKE_TF_PROVIDER_MIRROR" /tmp/tf-warmup && \
+    printf 'terraform {\n  required_providers {\n    databricks = {\n      source  = "databricks/databricks"\n      version = "%s"\n    }\n  }\n}\n' \
+        "${DATABRICKS_PROVIDER_VERSION}" > /tmp/tf-warmup/main.tf && \
+    cd /tmp/tf-warmup && \
+    TF_PLUGIN_CACHE_DIR="$MINILAKE_TF_PROVIDER_MIRROR" terraform init -input=false -no-color > /dev/null && \
+    rm -rf /tmp/tf-warmup && \
+    find "$MINILAKE_TF_PROVIDER_MIRROR" -name 'terraform-provider-databricks*' | grep -q . && \
+    chmod -R a+rX "$MINILAKE_TF_PROVIDER_MIRROR"
+
 # Copy project files
 COPY pyproject.toml pyproject.toml
 COPY src/ src/

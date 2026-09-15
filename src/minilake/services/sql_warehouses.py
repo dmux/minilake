@@ -8,6 +8,7 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from minilake.app import get_duckdb_pool
+from minilake.config import settings
 from minilake.errors import DatabricksError
 from minilake.models.sql import (
     CreateWarehouseRequest,
@@ -15,6 +16,7 @@ from minilake.models.sql import (
     GetWarehouseResponse,
     ListWarehousesResponse,
 )
+from minilake.services import identity
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,9 @@ async def create_warehouse(req: CreateWarehouseRequest) -> CreateWarehouseRespon
     warehouse_id = str(uuid.uuid4())[:8]
 
     now_ms = int(time.time() * 1000)
+    # Defaults match the real API's, because a client that omits a field reads back
+    # what Databricks would have defaulted it to — anything else is drift on the next
+    # plan. None of these values changes how a statement executes here.
     warehouse = {
         "id": warehouse_id,
         "name": req.name,
@@ -40,6 +45,24 @@ async def create_warehouse(req: CreateWarehouseRequest) -> CreateWarehouseRespon
         "comment": req.comment,
         "created_at": now_ms,
         "updated_at": now_ms,
+        "auto_stop_mins": req.auto_stop_mins if req.auto_stop_mins is not None else 120,
+        "min_num_clusters": req.min_num_clusters if req.min_num_clusters is not None else 1,
+        "max_num_clusters": req.max_num_clusters if req.max_num_clusters is not None else 1,
+        "num_clusters": 1,
+        "enable_photon": req.enable_photon if req.enable_photon is not None else True,
+        "enable_serverless_compute": (
+            req.enable_serverless_compute if req.enable_serverless_compute is not None else False
+        ),
+        "spot_instance_policy": req.spot_instance_policy or "COST_OPTIMIZED",
+        "warehouse_type": req.warehouse_type or "PRO",
+        "creator_name": identity.USER_NAME,
+        "odbc_params": {
+            "hostname": "localhost",
+            "host": "localhost",
+            "path": f"/sql/1.0/warehouses/{warehouse_id}",
+            "port": settings.port,
+            "protocol": "https" if settings.tls_enabled else "http",
+        },
     }
 
     _state["warehouses"][warehouse_id] = warehouse
