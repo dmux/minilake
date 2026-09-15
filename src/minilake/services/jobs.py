@@ -35,6 +35,9 @@ from minilake.models.jobs import (
     RunResultState,
     RunState,
     RunTaskInfo,
+    SqlTask,
+    SubmitRunRequest,
+    SubmitRunResponse,
     Task,
     UpdateJobRequest,
 )
@@ -47,6 +50,7 @@ router = APIRouter(prefix="/api/2.2/jobs", tags=["jobs"])
 _state: Dict[str, Any] = {
     "jobs": {},  # job_id (int) -> {job_id, created_time, creator_user_name, settings: dict}
     "runs": {},  # run_id (int) -> {..., "_cancel_requested": bool}
+    "submit_tokens": {},  # idempotency_token (str) -> run_id, for runs/submit
     "next_job_id": 1,
     "next_run_id": 1,
 }
@@ -185,6 +189,50 @@ async def delete_job(req: DeleteJobRequest) -> dict:
 # ============================================================================
 
 
+def _resolve_sql_task_text(sql_task: SqlTask) -> str:
+    """Return the SQL a sql_task should run, from whichever source it names.
+
+    `file` reads a .sql file out of the workspace; `query` and `alert` read the
+    saved query's text straight out of the Queries API's own state, which is the
+    same object `w.queries.create()` writes. An alert runs the query it watches —
+    evaluating its condition is the caller's job (see `_evaluate_alert`).
+    """
+    from minilake.services import alerts, saved_queries
+
+    if sql_task.file is not None:
+        try:
+            sql_path = workspace.resolve_workspace_path(sql_task.file.path)
+        except DatabricksError:
+            sql_path = None
+        if sql_path is None or not sql_path.exists():
+            raise DatabricksError(
+                error_code="RESOURCE_DOES_NOT_EXIST",
+                message=f"Workspace file '{sql_task.file.path}' not found",
+                status_code=404,
+            )
+        return sql_path.read_text()
+
+    if sql_task.query is not None:
+        return saved_queries.resolve_query_text(sql_task.query.query_id)
+
+    if sql_task.alert is not None:
+        alert = alerts.get_alert_or_404(sql_task.alert.alert_id)
+        query_id = (alert.get("query_id") or "").strip()
+        if not query_id:
+            raise DatabricksError(
+                error_code="INVALID_PARAMETER_VALUE",
+                message=f"Alert '{sql_task.alert.alert_id}' has no query_id",
+                status_code=400,
+            )
+        return saved_queries.resolve_query_text(query_id)
+
+    raise DatabricksError(
+        error_code="INVALID_PARAMETER_VALUE",
+        message="sql_task must name one of: file, query, alert",
+        status_code=400,
+    )
+
+
 async def _execute_sql_task(task: Task, task_run_id: int, now_ms: int) -> RunTaskInfo:
     """Execute sql_task.file for real against minilake's own SQL engine.
 
@@ -212,12 +260,14 @@ async def _execute_sql_task(task: Task, task_run_id: int, now_ms: int) -> RunTas
             end_time=int(time.time() * 1000),
         )
 
-    try:
-        sql_path = workspace.resolve_workspace_path(sql_task.file.path)
-    except DatabricksError:
-        sql_path = None
+    _state["task_outputs"] = _state.get("task_outputs", {})
 
-    if sql_path is None or not sql_path.exists():
+    if sql_task.alert is not None:
+        return await _execute_alert_task(task, task_run_id, now_ms, warehouse_id)
+
+    try:
+        sql_text = _resolve_sql_task_text(sql_task)
+    except DatabricksError as e:
         return RunTaskInfo(
             task_key=task.task_key,
             run_id=task_run_id,
@@ -225,17 +275,14 @@ async def _execute_sql_task(task: Task, task_run_id: int, now_ms: int) -> RunTas
             state=RunState(
                 life_cycle_state="TERMINATED",
                 result_state=RunResultState.FAILED,
-                state_message=f"Workspace file '{sql_task.file.path}' not found",
+                state_message=e.message,
             ),
             start_time=now_ms,
             end_time=int(time.time() * 1000),
         )
 
-    sql_text = sql_path.read_text()
     for key, value in (sql_task.parameters or {}).items():
         sql_text = sql_text.replace(f"{{{{{key}}}}}", value)
-
-    _state["task_outputs"] = _state.get("task_outputs", {})
 
     try:
         columns, rows = await sql_statements._execute_sql_real(warehouse_id, sql_text)
@@ -265,6 +312,51 @@ async def _execute_sql_task(task: Task, task_run_id: int, now_ms: int) -> RunTas
             start_time=now_ms,
             end_time=int(time.time() * 1000),
         )
+
+
+async def _execute_alert_task(task: Task, task_run_id: int, now_ms: int, warehouse_id: str) -> RunTaskInfo:
+    """Run a `sql_task.alert`: re-run the watched query and evaluate the condition.
+
+    The task succeeds whether or not the alert fires — a triggered alert is a real
+    outcome, not a failure. Which way it went is recorded in the run output, where
+    `runs/get-output` surfaces it.
+    """
+    from minilake.services import alerts
+
+    sql_task = task.sql_task
+    try:
+        evaluation = await alerts.evaluate_alert(sql_task.alert.alert_id, warehouse_id)
+    except DatabricksError as e:
+        _state["task_outputs"][task_run_id] = {"logs": None, "error": e.message}
+        return RunTaskInfo(
+            task_key=task.task_key,
+            run_id=task_run_id,
+            sql_task=sql_task,
+            state=RunState(
+                life_cycle_state="TERMINATED",
+                result_state=RunResultState.FAILED,
+                state_message=e.message,
+            ),
+            start_time=now_ms,
+            end_time=int(time.time() * 1000),
+        )
+
+    _state["task_outputs"][task_run_id] = {
+        "logs": f"alert_state={evaluation.state}\ntriggered={evaluation.triggered}\n{evaluation.message}",
+        "error": None,
+    }
+    return RunTaskInfo(
+        task_key=task.task_key,
+        run_id=task_run_id,
+        sql_task=sql_task,
+        state=RunState(
+            life_cycle_state="TERMINATED",
+            result_state=RunResultState.SUCCESS,
+            state_message=f"Alert {evaluation.state}",
+        ),
+        start_time=now_ms,
+        end_time=int(time.time() * 1000),
+    )
 
 
 _SECRET_TEMPLATE_RE = re.compile(r"\{\{secrets/([^/]+)/([^}]+)\}\}")
@@ -316,12 +408,14 @@ async def _execute_task(task: Task, argv: List[str]) -> RunTaskInfo:
     elif task.spark_python_task is not None:
         script_ref = task.spark_python_task.python_file
         static_args = list(task.spark_python_task.parameters or [])
-    elif task.sql_task is not None and task.sql_task.file is not None:
+    elif task.sql_task is not None and (
+        task.sql_task.file is not None or task.sql_task.query is not None or task.sql_task.alert is not None
+    ):
         # Runs directly against minilake's own SQL engine — no container needed.
         return await _execute_sql_task(task, task_run_id, now_ms)
     else:
-        # Unsupported task type (sql_task.query/dashboard/alert, dbt_task,
-        # pipeline_task, ...): SKIPPED, not faked.
+        # Unsupported task type (sql_task.dashboard, dbt_task, pipeline_task,
+        # ...): SKIPPED, not faked.
         logger.info(f"Task '{task.task_key}' has no executable task type — skipping")
         return RunTaskInfo(
             task_key=task.task_key,
@@ -445,8 +539,13 @@ async def _execute_run(run_id: int, argv: List[str]) -> None:
     run["state"] = {"life_cycle_state": "RUNNING", "result_state": None, "state_message": None}
     run["start_time"] = int(time.time() * 1000)
 
+    # A submitted run carries its own tasks (no job_id); a triggered run reads them
+    # from the job. Everything downstream — the DAG, run_if, cancellation — is shared.
     job = _state["jobs"].get(run["job_id"])
-    tasks = [Task(**t) for t in (job["settings"].get("tasks") if job else []) or []]
+    task_source = run.get("_tasks")
+    if task_source is None:
+        task_source = (job["settings"].get("tasks") if job else []) or []
+    tasks = [Task(**t) for t in task_source]
     task_by_key = {t.task_key: t for t in tasks}
     deps_by_key = {t.task_key: [d.task_key for d in (t.depends_on or []) if d.task_key in task_by_key] for t in tasks}
 
@@ -543,6 +642,50 @@ async def run_now(req: RunNowRequest) -> RunNowResponse:
     asyncio.create_task(_execute_run(run_id, argv))
 
     return RunNowResponse(run_id=run_id, number_in_job=run_id)
+
+
+@router.post("/runs/submit", response_model=SubmitRunResponse)
+async def submit_run(req: SubmitRunRequest) -> SubmitRunResponse:
+    """Submit a one-shot run: execute tasks without creating a job first.
+
+    This is the path `databricks bundle run` and most CI code take. It reuses the
+    same DAG scheduler `run-now` uses — the only difference is where the task list
+    comes from.
+    """
+    if not req.tasks:
+        raise DatabricksError(
+            error_code="INVALID_PARAMETER_VALUE",
+            message="tasks is required and must not be empty",
+            status_code=400,
+        )
+
+    token = req.idempotency_token
+    if token:
+        existing = _state["submit_tokens"].get(token)
+        if existing is not None:
+            logger.info(f"Submit with idempotency_token '{token}' reused run {existing}")
+            return SubmitRunResponse(run_id=existing)
+
+    run_id = _next_run_id()
+    now_ms = int(time.time() * 1000)
+    _state["runs"][run_id] = {
+        "run_id": run_id,
+        "job_id": None,
+        "run_name": req.run_name or f"submit-{run_id}",
+        "state": {"life_cycle_state": "PENDING", "result_state": None, "state_message": None},
+        "start_time": now_ms,
+        "end_time": None,
+        "tasks": [],
+        "_cancel_requested": False,
+        "_tasks": [t.model_dump(exclude_none=True) for t in req.tasks],
+    }
+    if token:
+        _state["submit_tokens"][token] = run_id
+
+    asyncio.create_task(_execute_run(run_id, []))
+
+    logger.info(f"Submitted run {run_id} with {len(req.tasks)} task(s)")
+    return SubmitRunResponse(run_id=run_id)
 
 
 @router.get("/runs/get", response_model=RunInfo)
@@ -688,6 +831,7 @@ async def reset() -> None:
     _state = {
         "jobs": {},
         "runs": {},
+        "submit_tokens": {},
         "next_job_id": 1,
         "next_run_id": 1,
     }

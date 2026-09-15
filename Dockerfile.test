@@ -26,6 +26,17 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* && \
     pip install --no-cache-dir uv
 
+# Databricks CLI, for scripts/cli_coverage.py. Pinned like the Spark/Delta packages above:
+# the coverage numbers in docs/CLI_COVERAGE.md are only comparable across runs if the CLI
+# that produced them is the same one.
+ARG DATABRICKS_CLI_VERSION=1.16.1
+RUN curl -fsSL -o /tmp/databricks.zip \
+        "https://github.com/databricks/cli/releases/download/v${DATABRICKS_CLI_VERSION}/databricks_cli_${DATABRICKS_CLI_VERSION}_linux_amd64.zip" && \
+    python -c "import zipfile; zipfile.ZipFile('/tmp/databricks.zip').extract('databricks', '/usr/local/bin')" && \
+    chmod 755 /usr/local/bin/databricks && \
+    rm /tmp/databricks.zip && \
+    databricks --version
+
 # Copy project files
 COPY pyproject.toml pyproject.toml
 COPY src/ src/

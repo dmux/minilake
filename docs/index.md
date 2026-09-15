@@ -42,6 +42,8 @@ It has its own section:
 | [Testing & development](testing.md) | Running the suite (Docker is not optional), adding a feature |
 | [Releases & CI/CD](releases.md) | How a tag becomes a published image |
 | [Feature status](../FEATURES.md) | Endpoint-by-endpoint status and design rationale |
+| [API coverage map](CLI_COVERAGE.md) | Generated: every SDK endpoint probed through the real `databricks` CLI, answered vs 501 |
+| [Emulation roadmap](EMULATION_ROADMAP.md) | What to build next and why, with measured gap counts |
 | [Contributing](../CONTRIBUTING.md) | Project structure and the PR checklist |
 
 ## What minilake is not
