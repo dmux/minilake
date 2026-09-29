@@ -8,6 +8,22 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.8.0] — 2026-09-29
+
+Clears every open Dependabot alert. The change is only in `ui/pnpm-lock.yaml`: each
+patched version fits the range its parent already declares, so `ui/package.json` is
+unchanged and no `overrides` are needed.
+
+### Security
+
+- **Transitive UI dependencies bumped** within their existing semver ranges:
+  `fast-uri` 3.1.5 → 3.1.8 (4 high-severity host-confusion / SSRF advisories),
+  `js-yaml` 4.3.1 → 4.3.2, `hono` 4.13.3 → 4.13.11, `qs` 6.15.3 → 6.16.0, plus
+  `undici` 7.29.0 → 7.30.0 and `ip-address` 10.5.0 → 10.7.2, which `pnpm audit`
+  flagged before Dependabot did. All of these come in through `shadcn` (its MCP SDK,
+  express and ajv) or eslint, not the exported UI bundle, so actual exposure was low.
+  `pnpm audit` now reports no known vulnerabilities.
+
 ## [1.7.8] — 2026-09-15
 
 Makes the Terraform claim testable, then acts on what the test found.
@@ -398,6 +414,7 @@ server — all working and tested, with `MINILAKE_PERSIST` wired in.
 
 See [FEATURES.md](FEATURES.md) for the full per-feature status of this release.
 
+[1.8.0]: https://github.com/dmux/minilake/compare/v1.7.8...v1.8.0
 [1.7.8]: https://github.com/dmux/minilake/compare/v1.7.7...v1.7.8
 [1.7.7]: https://github.com/dmux/minilake/compare/v1.7.6...v1.7.7
 [1.7.6]: https://github.com/dmux/minilake/compare/v1.7.4...v1.7.6
