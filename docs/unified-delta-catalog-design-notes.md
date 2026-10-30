@@ -7,6 +7,9 @@ contains the approval request, tradeoffs, performance targets, and release recom
 Discuss the direction in [issue #89](https://github.com/dmux/minilake/issues/89) and review
 these documents in [pull request #90](https://github.com/dmux/minilake/pull/90).
 
+Use the [phased implementation plan](unified-delta-catalog-implementation-plan.md) for work
+sequencing, proposed PR boundaries, and the evidence needed to complete each phase.
+
 ## Table storage and ownership
 
 Use one registry for all persistent Delta tables. Each entry maps a catalog/schema/name

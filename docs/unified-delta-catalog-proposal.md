@@ -140,6 +140,9 @@ a native row cache would need a separate proposal because it restores duplicate 
 
 ## Migration and release plan
 
+The [phased implementation plan](unified-delta-catalog-implementation-plan.md) breaks these
+stages into deliverables, dependencies, validation evidence, and maintainer approval points.
+
 | Stage | Deliverable | Decision before proceeding |
 |---|---|---|
 | 1. Feasibility | Embedded baseline SQL, managed-table Spark interoperability, native/Delta benchmarks | Do compatibility and measured costs justify continuing? |
