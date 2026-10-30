@@ -44,6 +44,7 @@ It has its own section:
 | [Feature status](../FEATURES.md) | Endpoint-by-endpoint status and design rationale |
 | [API coverage map](CLI_COVERAGE.md) | Generated: every SDK endpoint probed through the real `databricks` CLI, answered vs 501 |
 | [Emulation roadmap](EMULATION_ROADMAP.md) | What to build next and why, with measured gap counts |
+| [Unified Delta catalog proposal](unified-delta-catalog-proposal.md) | Decision requested, user impact, performance targets, migration, and release plan |
 | [Contributing](../CONTRIBUTING.md) | Project structure and the PR checklist |
 
 ## What minilake is not
