@@ -4,6 +4,9 @@ Supporting notes for the [proposal](unified-delta-catalog-proposal.md).
 These describe proposed requirements, not implemented capabilities. The main proposal
 contains the approval request, tradeoffs, performance targets, and release recommendation.
 
+Discuss the direction in [issue #89](https://github.com/dmux/minilake/issues/89) and review
+these documents in [pull request #90](https://github.com/dmux/minilake/pull/90).
+
 ## Table storage and ownership
 
 Use one registry for all persistent Delta tables. Each entry maps a catalog/schema/name

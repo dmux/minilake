@@ -2,6 +2,9 @@
 
 **Status:** proposed · **Date:** 2026-10-30 · **Recommended final release:** minilake 2.0.0
 
+**Discussion:** [upstream issue #89](https://github.com/dmux/minilake/issues/89) ·
+**Document review:** [pull request #90](https://github.com/dmux/minilake/pull/90)
+
 Give each persistent table one set of Delta files that both DuckDB SQL and PySpark can
 read and write. Keep DuckDB as the SQL engine and minilake's Unity Catalog API as the
 catalog.
