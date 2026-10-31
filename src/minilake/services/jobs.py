@@ -201,7 +201,12 @@ async def update_job(req: UpdateJobRequest) -> dict:
     job = _state["jobs"][req.job_id]
     new_settings = dict(job["settings"])
     if req.new_settings is not None:
-        new_settings.update(req.new_settings.model_dump(exclude_none=True))
+        # Merge only the top-level fields the request actually sent. A plain dump also
+        # carries model defaults (name="Untitled"), which would overwrite stored values the
+        # caller never touched. exclude_unset is not used because it would also strip the
+        # nested defaults (e.g. a task's run_if) that create_job stores.
+        sent = req.new_settings.model_fields_set
+        new_settings.update(req.new_settings.model_dump(exclude_none=True, include=sent))
     for field in req.fields_to_remove or []:
         new_settings.pop(field, None)
     _validate_task_graph(_tasks_from_settings(new_settings))
