@@ -127,6 +127,40 @@ print(output.logs)
 That runs real `spark-submit` in a sibling container. `depends_on` and `run_if` are honoured,
 and independent branches run in parallel.
 
+### Python libraries and calling minilake from a job
+
+The Spark image only ships PySpark. A task declares what else it imports with `libraries`, as
+on Databricks:
+
+```python
+from databricks.sdk.service.compute import Library, PythonPyPiLibrary
+
+Task(
+    task_key="main",
+    spark_python_task=SparkPythonTask(python_file="/Shared/uses_sdk.py"),
+    libraries=[Library(pypi=PythonPyPiLibrary(package="databricks-sdk"))],
+)
+```
+
+Each requirement (`package` is any pip spec: `requests>=2.31`, `pkg[extra]==1.0`) is installed
+with `pip install --target` inside the job container and put on `PYTHONPATH`. The install is
+cached on the data volume by the set of libraries, so only the first run with that set pays for
+it. `repo` selects a package index (`http(s)` URL). A failed install fails the task, with pip's
+output in the run logs.
+
+Every job also gets `DATABRICKS_HOST` and `DATABRICKS_TOKEN`, so a script can talk back to the
+minilake that launched it without any arguments:
+
+```python
+from databricks.sdk import WorkspaceClient
+
+w = WorkspaceClient()          # inside a job: no host or token needed
+print([j.settings.name for j in w.jobs.list()])
+```
+
+Variables set in the task's `spark_env_vars` take precedence. See `MINILAKE_JOB_API_URL` and
+`MINILAKE_JOB_TOKEN` in [Configuration](configuration.md).
+
 ## Errors
 
 minilake returns the Databricks error shape — `{"error_code": ..., "message": ...}` — so the

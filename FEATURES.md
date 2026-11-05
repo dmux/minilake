@@ -515,6 +515,8 @@ after each item, run via
 
 ### 10. **Jobs — Real Execution via Sibling Docker Containers** ✅
 
+- ✅ Task `libraries[].pypi` is honoured: requirements are `pip install --target`ed in the job container (cached on the data volume per set of libraries, `repo` as the index) and put on `PYTHONPATH`; `maven` becomes `--packages`. `jar`/`whl` are accepted and ignored. Invalid specs (pip options, non-http(s) index) fail the task
+- ✅ Jobs receive `DATABRICKS_HOST` / `DATABRICKS_TOKEN` (`MINILAKE_JOB_API_URL` / `MINILAKE_JOB_TOKEN`), so `WorkspaceClient()` inside a script reaches the minilake that launched it; `spark_env_vars` override them
 - ✅ The Jobs API is also served under `/api/2.1/jobs` and `/api/2.0/jobs` (aliases of `/api/2.2/jobs`) for older SDKs/CLIs. Browser clients can be allowed with `MINILAKE_CORS_ORIGINS` (see `docs/configuration.md`)
 
 **Modules:** `minilake/services/jobs.py`, `minilake/docker_executor.py`

@@ -137,13 +137,21 @@ class MavenLibrary(BaseModel):
     exclusions: Optional[List[str]] = None
 
 
+class PypiLibrary(BaseModel):
+    """A pip requirement, as in a Databricks task's `libraries[].pypi`."""
+
+    package: str
+    repo: Optional[str] = None
+
+
 class Library(BaseModel):
-    """A task library. Only `maven` is honoured — its coordinates become
-    `spark-submit --packages`, which is what a script needs to use a format the base
-    Spark image doesn't ship (Delta being the common case). `pypi`/`jar`/`whl` are
+    """A task library. `maven` coordinates become `spark-submit --packages` (what a script
+    needs to use a format the base Spark image doesn't ship, Delta being the common case);
+    `pypi` requirements are `pip install`ed and put on `PYTHONPATH`. `jar`/`whl` are
     accepted for request compatibility but ignored at run time."""
 
     maven: Optional[MavenLibrary] = None
+    pypi: Optional[PypiLibrary] = None
 
     class Config:
         extra = "allow"
