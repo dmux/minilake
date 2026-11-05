@@ -8,7 +8,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
-## [Unreleased]
+## [1.9.3] — 2026-11-05
+
+Lets a job task install Python packages and call minilake back with the Databricks SDK.
 
 ### Added
 
