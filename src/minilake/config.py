@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     # and minilake has no auth to fall back on.
     dev_cors: bool = os.getenv("MINILAKE_DEV_CORS", "").lower() in ("1", "true", "yes")
 
+    # Comma-separated allowlist of browser origins that may call the API cross-origin
+    # (e.g. "http://localhost:3000,https://app.example.com"); "*" allows any origin.
+    # Unset keeps the default same-origin behaviour. Unlike MINILAKE_DEV_CORS this lets
+    # an external web app (such as OpenArchFlow) talk to minilake.
+    # Kept as the raw string: pydantic-settings would parse a list-typed field from the
+    # environment as JSON, so "a,b" would stop startup. Use `cors_origin_list`.
+    cors_origins: str = ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # DuckDB settings
     duckdb_memory_limit: str = os.getenv("MINILAKE_DUCKDB_MEMORY_LIMIT", "4GB")
     # Directory holding pre-installed DuckDB extensions. The Docker image sets this and

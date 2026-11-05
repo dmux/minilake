@@ -515,6 +515,8 @@ after each item, run via
 
 ### 10. **Jobs — Real Execution via Sibling Docker Containers** ✅
 
+- ✅ The Jobs API is also served under `/api/2.1/jobs` and `/api/2.0/jobs` (aliases of `/api/2.2/jobs`) for older SDKs/CLIs. Browser clients can be allowed with `MINILAKE_CORS_ORIGINS` (see `docs/configuration.md`)
+
 **Modules:** `minilake/services/jobs.py`, `minilake/docker_executor.py`
 **Endpoints:**
 
