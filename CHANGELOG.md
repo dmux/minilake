@@ -8,6 +8,33 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [1.9.2] — 2026-11-05
+
+Lets browser apps talk to minilake directly, keeps older Databricks SDKs and CLIs working
+against the Jobs API, and fixes `jobs/update` dropping settings that were left out of the
+request.
+
+Thanks to [@avison9](https://github.com/avison9) for
+[#69](https://github.com/dmux/minilake/pull/69).
+
+### Added
+
+- **`MINILAKE_CORS_ORIGINS`** — a comma-separated allowlist of browser origins that may
+  call the API cross-origin (`*` allows any). Unset keeps the same-origin default, and
+  `MINILAKE_DEV_CORS` still works. Preflights also answer
+  `Access-Control-Allow-Private-Network`, which Chrome requires when a page calls
+  `localhost`. The Docker Compose file defaults it to `http://localhost:3000`
+  ([#92](https://github.com/dmux/minilake/issues/92),
+  [#93](https://github.com/dmux/minilake/pull/93)).
+- **Jobs API version aliases** — `/api/2.0/jobs` and `/api/2.1/jobs` are served as aliases
+  of `/api/2.2/jobs`, so older SDKs and CLIs no longer hit the 501 catch-all
+  ([#93](https://github.com/dmux/minilake/pull/93)).
+
+### Fixed
+
+- **`jobs/update` keeps settings that the request omits** instead of resetting them, such
+  as the job name ([#69](https://github.com/dmux/minilake/pull/69)).
+
 ## [1.9.1] — 2026-10-29
 
 A bug-fix release. It makes SQL, Unity Catalog, DBFS/Files, jobs, clusters and SCIM
