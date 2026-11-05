@@ -49,7 +49,13 @@ class Settings(BaseSettings):
     # (e.g. "http://localhost:3000,https://app.example.com"); "*" allows any origin.
     # Unset keeps the default same-origin behaviour. Unlike MINILAKE_DEV_CORS this lets
     # an external web app (such as OpenArchFlow) talk to minilake.
-    cors_origins: list[str] = [o.strip() for o in os.getenv("MINILAKE_CORS_ORIGINS", "").split(",") if o.strip()]
+    # Kept as the raw string: pydantic-settings would parse a list-typed field from the
+    # environment as JSON, so "a,b" would stop startup. Use `cors_origin_list`.
+    cors_origins: str = ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     # DuckDB settings
     duckdb_memory_limit: str = os.getenv("MINILAKE_DUCKDB_MEMORY_LIMIT", "4GB")

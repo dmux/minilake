@@ -84,7 +84,7 @@ def _client(monkeypatch, origins):
 
     from minilake import app as app_module
 
-    monkeypatch.setattr(app_module.settings, "cors_origins", origins)
+    monkeypatch.setattr(app_module.settings, "cors_origins", ",".join(origins))
     monkeypatch.setattr(app_module.settings, "dev_cors", False)
     # No context manager: skip the lifespan, these requests never touch state.
     return TestClient(create_app())
@@ -147,3 +147,12 @@ def test_jobs_api_version_aliases(version):
     client.get(f"/api/{version}/jobs/runs/get")
     client.get(f"/api/{version}/clusters/list")
     assert seen == ["/api/2.2/jobs/runs/get", f"/api/{version}/clusters/list"]
+
+
+@pytest.mark.smoke
+def test_cors_origins_env_is_comma_separated(monkeypatch):
+    """Regression: a comma-separated env value must not be parsed as JSON."""
+    from minilake.config import Settings
+
+    monkeypatch.setenv("MINILAKE_CORS_ORIGINS", "http://a.example, http://b.example")
+    assert Settings().cors_origin_list == ["http://a.example", "http://b.example"]

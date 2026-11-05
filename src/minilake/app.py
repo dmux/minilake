@@ -1,6 +1,7 @@
 """FastAPI application factory for minilake."""
 
 import asyncio
+import inspect
 import logging
 import mimetypes
 import re
@@ -224,7 +225,8 @@ class JobsApiVersionAliasMiddleware:
 
 
 class PrivateNetworkAccessMiddleware:
-    """Answer Chrome's Private Network Access preflights.
+    """Answer Chrome's Private Network Access preflights on Starlette versions without
+    native support (CORSMiddleware(allow_private_network=...)).
 
     HTTPS pages calling a local server send ``Access-Control-Request-Private-Network``
     and require ``Access-Control-Allow-Private-Network: true`` in the response.
@@ -264,21 +266,26 @@ def create_app() -> FastAPI:
     # Same-origin is the normal case (the UI is served from /ui by this same app);
     # this exists only so the UI's Next.js dev server on another port can reach the
     # API during development.
-    cors_origins = ["*"] if settings.dev_cors else list(settings.cors_origins)
+    cors_origins = ["*"] if settings.dev_cors else settings.cors_origin_list
     if settings.dev_cors:
         logger.warning("MINILAKE_DEV_CORS is set: allowing cross-origin API access from any origin")
     if cors_origins:
         logger.info(f"CORS enabled for origins: {cors_origins}")
-        app.add_middleware(
-            CORSMiddleware,
+        cors_kwargs = dict(
             allow_origins=cors_origins,
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )
-        # Registered after CORSMiddleware so it runs outermost and can decorate the
-        # preflight response CORSMiddleware generates.
-        app.add_middleware(PrivateNetworkAccessMiddleware)
+        if "allow_private_network" in inspect.signature(CORSMiddleware.__init__).parameters:
+            # Recent Starlette answers Private Network Access preflights itself (and
+            # rejects them with 400 unless this is set).
+            app.add_middleware(CORSMiddleware, allow_private_network=True, **cors_kwargs)
+        else:
+            app.add_middleware(CORSMiddleware, **cors_kwargs)
+            # Registered after CORSMiddleware so it runs outermost and can decorate the
+            # preflight response CORSMiddleware generates.
+            app.add_middleware(PrivateNetworkAccessMiddleware)
 
     # Older Databricks SDKs/CLIs call the Jobs API under /api/2.0 and /api/2.1.
     app.add_middleware(JobsApiVersionAliasMiddleware)
