@@ -64,8 +64,8 @@ docker pull apache/spark:3.5.3-scala2.12-java17-python3-ubuntu
 ```
 
 Then set `MINILAKE_SPARK_PREWARM=0` to stop minilake from re-checking for it at startup.
-Maven coordinates you supply yourself — a task's `libraries`, or `packages=[...]` on the
-MCP job tool — are still fetched from Maven Central on first use.
+Libraries you supply yourself — a task's `libraries` (Maven coordinates, PyPI requirements),
+or `packages=[...]` on the MCP job tool — are still fetched on first use.
 
 ## Verify
 

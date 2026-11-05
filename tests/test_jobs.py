@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import DatabricksError
-from databricks.sdk.service.compute import ClusterSpec
+from databricks.sdk.service.compute import ClusterSpec, Library, PythonPyPiLibrary
 from databricks.sdk.service.jobs import (
     JobEmailNotifications,
     JobSettings,
@@ -299,6 +299,63 @@ def test_job_run_parameters_reach_the_script(workspace_client: WorkspaceClient):
     assert "bar=baz" in (output.logs or "")
 
     print(f"✓ Runtime parameters reached the real script (run_id={run.run_id})")
+
+
+@pytest.mark.workflow
+def test_job_task_rejects_a_pypi_library_that_looks_like_a_pip_option(workspace_client: WorkspaceClient):
+    """A library spec is request input: `--pre` must fail the task, not reach pip."""
+    script_path = _import_script(workspace_client, b"print('SHOULD_NOT_RUN')\n")
+
+    job = workspace_client.jobs.create(
+        name="bad-library-job",
+        tasks=[
+            Task(
+                task_key="main",
+                spark_python_task=SparkPythonTask(python_file=script_path),
+                libraries=[Library(pypi=PythonPyPiLibrary(package="--pre"))],
+            )
+        ],
+    )
+
+    run = workspace_client.jobs.run_now(job_id=job.job_id).result(timeout=RUN_TIMEOUT)
+
+    assert run.state.result_state.value == "FAILED"
+    assert "Invalid pypi library" in (run.tasks[0].state.state_message or "")
+    print(f"✓ A pip-option-looking library fails the task (run_id={run.run_id})")
+
+
+@pytest.mark.serial
+@pytest.mark.workflow
+def test_job_installs_pypi_library_and_reaches_minilake_without_arguments(workspace_client: WorkspaceClient):
+    """`libraries[].pypi` is installed in the job container, and WorkspaceClient() works there.
+
+    The job gets DATABRICKS_HOST/DATABRICKS_TOKEN pointing at the minilake that launched it,
+    so the Databricks SDK needs no arguments. Needs network access to PyPI.
+    """
+    script_path = _import_script(
+        workspace_client,
+        b"from databricks.sdk import WorkspaceClient\n"
+        b"w = WorkspaceClient()\n"
+        b"print('SDK_IN_JOB_OK', len(list(w.jobs.list())) >= 0)\n",
+    )
+
+    job = workspace_client.jobs.create(
+        name="sdk-in-job",
+        tasks=[
+            Task(
+                task_key="main",
+                spark_python_task=SparkPythonTask(python_file=script_path),
+                libraries=[Library(pypi=PythonPyPiLibrary(package="databricks-sdk"))],
+            )
+        ],
+    )
+
+    run = workspace_client.jobs.run_now(job_id=job.job_id).result(timeout=RUN_TIMEOUT)
+
+    output = workspace_client.jobs.get_run_output(run_id=run.tasks[0].run_id)
+    assert run.state.result_state.value == "SUCCESS", output.logs
+    assert "SDK_IN_JOB_OK True" in (output.logs or "")
+    print(f"✓ databricks-sdk installed from PyPI and WorkspaceClient() worked inside the job (run_id={run.run_id})")
 
 
 def _import_sql_file(workspace_client: WorkspaceClient, sql: str) -> str:

@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections import defaultdict, deque
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Query, Request
 
@@ -475,6 +475,19 @@ def _maven_packages(task: Task) -> Optional[List[str]]:
     return coordinates or None
 
 
+def _pypi_libraries(task: Task) -> Tuple[List[str], List[str]]:
+    """(pip requirement specs, index URLs) from a task's `libraries[].pypi`."""
+    packages: List[str] = []
+    index_urls: List[str] = []
+    for lib in task.libraries or []:
+        if lib.pypi is None:
+            continue
+        packages.append(lib.pypi.package)
+        if lib.pypi.repo and lib.pypi.repo not in index_urls:
+            index_urls.append(lib.pypi.repo)
+    return packages, index_urls
+
+
 async def _execute_task(task: Task, argv: List[str]) -> RunTaskInfo:
     """Execute a single task for real. Returns its terminal RunTaskInfo."""
     now_ms = int(time.time() * 1000)
@@ -538,13 +551,27 @@ async def _execute_task(task: Task, argv: List[str]) -> RunTaskInfo:
             end_time=int(time.time() * 1000),
         )
 
-    result = await docker_executor.run_python_task(
-        script_path=str(script_path),
-        args=static_args + argv,
-        timeout_seconds=task.timeout_seconds or docker_executor.DEFAULT_TIMEOUT_SECONDS,
-        env=resolved_env,
-        packages=_maven_packages(task),
-    )
+    pypi_packages, pypi_index_urls = _pypi_libraries(task)
+    try:
+        result = await docker_executor.run_python_task(
+            script_path=str(script_path),
+            args=static_args + argv,
+            timeout_seconds=task.timeout_seconds or docker_executor.DEFAULT_TIMEOUT_SECONDS,
+            env=resolved_env,
+            packages=_maven_packages(task),
+            pypi_packages=pypi_packages,
+            pypi_index_urls=pypi_index_urls,
+        )
+    except docker_executor.InvalidLibraryError as e:
+        return RunTaskInfo(
+            task_key=task.task_key,
+            run_id=task_run_id,
+            notebook_task=task.notebook_task,
+            spark_python_task=task.spark_python_task,
+            state=RunState(life_cycle_state="TERMINATED", result_state=RunResultState.FAILED, state_message=str(e)),
+            start_time=now_ms,
+            end_time=int(time.time() * 1000),
+        )
     end_ms = int(time.time() * 1000)
 
     _state["task_outputs"] = _state.get("task_outputs", {})

@@ -14,13 +14,17 @@ see files written under `settings.data_dir` (e.g. imported workspace notebooks).
 """
 
 import asyncio
+import hashlib
 import logging
 import os
+import shlex
 import shutil
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import docker
 from docker.errors import APIError, DockerException
@@ -46,6 +50,72 @@ DEFAULT_DELTA_PACKAGE = os.environ.get("MINILAKE_DELTA_PACKAGE", "io.delta:delta
 # Marks an Ivy home as already seeded from MINILAKE_IVY_SEED, so the copy happens once per
 # data volume rather than on every job run.
 _IVY_SEED_MARKER = ".minilake-seeded"
+
+# Where PyPI libraries requested by a task are installed, on the shared data volume. One
+# directory per distinct set of libraries, so an unchanged set is installed once.
+_PIP_LIBS_DIRNAME = ".pip-libs"
+
+# Placeholder handed to jobs as DATABRICKS_TOKEN: minilake has no auth, but the Databricks
+# SDK refuses to build a client without some credential.
+DEFAULT_JOB_TOKEN = "dapi-minilake"
+
+
+class InvalidLibraryError(ValueError):
+    """A task library that cannot be installed safely (e.g. a pip option as a package)."""
+
+
+def validate_pypi_requirements(packages: List[str], index_urls: List[str]) -> None:
+    """Reject library specs that pip would read as options or that are not plain URLs.
+
+    The specs come straight from a request body, so a "package" such as `--index-url=...`
+    or `-r /etc/passwd` must never reach pip's argument parser.
+    """
+    for package in packages:
+        spec = package.strip()
+        if not spec or spec.startswith("-") or any(c in spec for c in "\n\r\0"):
+            raise InvalidLibraryError(f"Invalid pypi library '{package}'")
+    for url in index_urls:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc or url.startswith("-"):
+            raise InvalidLibraryError(f"Invalid pypi repo '{url}': expected an http(s) URL")
+
+
+def _pip_libs_target(packages: List[str], index_urls: List[str]) -> Path:
+    """Cache directory for this exact set of libraries (order-insensitive)."""
+    key = "\n".join([*sorted(p.strip() for p in packages), "--", *sorted(index_urls)])
+    return settings.data_dir / _PIP_LIBS_DIRNAME / hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _pip_install_args(packages: List[str], index_urls: List[str], target: Path) -> List[str]:
+    """Arguments after the Python interpreter for `pip install --target <target>`."""
+    args = ["-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--no-input", "--upgrade"]
+    for position, url in enumerate(index_urls):
+        args += ["--index-url" if position == 0 else "--extra-index-url", url]
+    # `--` ends option parsing, so no package spec can be read as a pip option.
+    return [*args, "--target", str(target), "--", *(p.strip() for p in packages)]
+
+
+def _container_command(spark_command: List[str], packages: List[str], index_urls: List[str], target: Path) -> List[str]:
+    """Wrap the spark-submit command so the libraries are installed before it runs.
+
+    Installs into a temporary directory and renames it into place only on success, so two
+    tasks starting at once with the same libraries cannot leave a half-written directory
+    behind. A failed install fails the task, with pip's output in the task logs.
+    """
+    tmp = Path(f"{target}.tmp-{uuid.uuid4().hex}")
+    pip_cmd = shlex.join(["python3", *_pip_install_args(packages, index_urls, tmp)])
+    script = (
+        "set -e; "
+        f"trap 'rm -rf {shlex.quote(str(tmp))}' EXIT; "
+        f"if [ ! -d {shlex.quote(str(target))} ]; then "
+        f"{pip_cmd}; "
+        # Losing the rename race means another task already installed the same set.
+        f"mv {shlex.quote(str(tmp))} {shlex.quote(str(target))} 2>/dev/null || true; "
+        "fi; "
+        f'export PYTHONPATH={shlex.quote(str(target))}"${{PYTHONPATH:+:$PYTHONPATH}}"; '
+        f"{shlex.join(spark_command)}"
+    )
+    return ["sh", "-c", script]
 
 
 def _executor_mode() -> str:
@@ -183,11 +253,86 @@ def _run_container_sync(
                 pass
 
 
+def _own_container_address(network: Optional[str]) -> Optional[str]:
+    """This container's IP on the network a job container will join, if discoverable.
+
+    A job on the default bridge cannot resolve container names, so the address is used
+    rather than a hostname; it is valid on any network and needs no DNS.
+    """
+    container_id = os.environ.get("HOSTNAME")
+    if not container_id:
+        return None
+    try:
+        networks = _get_client().containers.get(container_id).attrs["NetworkSettings"]["Networks"]
+    except (DockerException, KeyError) as e:
+        logger.debug(f"Could not introspect own container address: {e}")
+        return None
+    entry = networks.get(network or "bridge") or {}
+    return entry.get("IPAddress") or None
+
+
+def _job_api_env(in_container: bool) -> Dict[str, str]:
+    """DATABRICKS_HOST / DATABRICKS_TOKEN for a job, so `WorkspaceClient()` needs no arguments.
+
+    `MINILAKE_JOB_API_URL` overrides the address. Otherwise it is derived: loopback for a
+    plain subprocess, or this container's own address on the job container's network. If
+    that cannot be determined, nothing is injected rather than pointing the job at a
+    `localhost` that is not minilake.
+    """
+    host = os.environ.get("MINILAKE_JOB_API_URL", "").strip().rstrip("/")
+    if not host:
+        if not in_container:
+            host = f"http://127.0.0.1:{settings.port}"
+        else:
+            address = _own_container_address(_resolve_network())
+            if address:
+                host = f"http://{address}:{settings.port}"
+    if not host:
+        return {}
+    return {
+        "DATABRICKS_HOST": host,
+        "DATABRICKS_TOKEN": os.environ.get("MINILAKE_JOB_TOKEN", DEFAULT_JOB_TOKEN),
+    }
+
+
+def _install_pypi_libs_local(packages: List[str], index_urls: List[str]) -> "tuple[Optional[Path], str]":
+    """Subprocess-mode counterpart of the in-container install: (target, pip output).
+
+    `target` is None when the install failed; the output then holds pip's error.
+    """
+    target = _pip_libs_target(packages, index_urls)
+    if target.is_dir():
+        return target, ""
+    ensure_writable_dir(target.parent)
+    tmp = Path(f"{target}.tmp-{uuid.uuid4().hex}")
+    try:
+        proc = subprocess.run(
+            # Same interpreter that will run the script (`python3`), so the libraries match it.
+            ["python3", *_pip_install_args(packages, index_urls, tmp)],
+            capture_output=True,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
+        output = (proc.stdout + proc.stderr).decode("utf-8", errors="replace")
+        if proc.returncode != 0:
+            return None, output
+        try:
+            tmp.rename(target)
+        except OSError:
+            pass  # another task installed the same set first
+        return target, output
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return None, f"pip install failed: {e}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _run_subprocess_sync(
     script_path: str,
     args: List[str],
     timeout_seconds: int,
     env: Optional[Dict[str, str]] = None,
+    pypi_packages: Optional[List[str]] = None,
+    pypi_index_urls: Optional[List[str]] = None,
 ) -> ExecutionResult:
     """Blocking: run the script as a plain local subprocess (no Docker, no Spark).
 
@@ -196,6 +341,12 @@ def _run_subprocess_sync(
     without container isolation or a Spark runtime.
     """
     merged_env = {**os.environ, **(env or {})}
+    if pypi_packages:
+        target, output = _install_pypi_libs_local(pypi_packages, pypi_index_urls or [])
+        if target is None:
+            return ExecutionResult(exit_code=1, logs=output)
+        existing = merged_env.get("PYTHONPATH")
+        merged_env["PYTHONPATH"] = f"{target}{os.pathsep}{existing}" if existing else str(target)
     try:
         proc = subprocess.run(
             ["python3", script_path, *args],
@@ -219,6 +370,8 @@ async def run_python_task(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     env: Optional[Dict[str, str]] = None,
     packages: Optional[List[str]] = None,
+    pypi_packages: Optional[List[str]] = None,
+    pypi_index_urls: Optional[List[str]] = None,
 ) -> ExecutionResult:
     """Run a Python script as a job task — a real Spark container by default,
     or a plain local subprocess if MINILAKE_JOB_EXECUTOR=subprocess.
@@ -230,12 +383,24 @@ async def run_python_task(
     image doesn't ship with). The Ivy cache lives under `settings.data_dir`
     (the shared volume) so packages are only resolved from Maven once, not
     on every single run.
+
+    `pypi_packages` are pip requirement specs (from a task's `libraries[].pypi`), installed
+    with `pip install --target` into a directory on the shared volume that is reused by
+    later runs with the same set, and put on `PYTHONPATH`. `pypi_index_urls` are the
+    optional `repo` indexes. The job also receives `DATABRICKS_HOST` / `DATABRICKS_TOKEN`
+    (unless `env` sets them), so `WorkspaceClient()` reaches this minilake.
     """
     mode = _executor_mode()
+    pypi_packages = pypi_packages or []
+    pypi_index_urls = pypi_index_urls or []
+    validate_pypi_requirements(pypi_packages, pypi_index_urls)
 
     if mode == "subprocess":
         logger.info(f"Running job task via subprocess (no Spark): {script_path} {args or []}")
-        return await asyncio.to_thread(_run_subprocess_sync, script_path, args or [], timeout_seconds, env)
+        job_env = {**_job_api_env(in_container=False), **(env or {})}
+        return await asyncio.to_thread(
+            _run_subprocess_sync, script_path, args or [], timeout_seconds, job_env, pypi_packages, pypi_index_urls
+        )
 
     spark_image = image or os.environ.get("MINILAKE_SPARK_IMAGE", DEFAULT_SPARK_IMAGE)
     volumes = _resolve_volume_mount()
@@ -251,9 +416,14 @@ async def run_python_task(
         ivy_cache = _prepare_ivy_cache()
         submit_flags = ["--packages", ",".join(packages), "--conf", f"spark.jars.ivy={ivy_cache}"]
     command = ["/opt/spark/bin/spark-submit", *submit_flags, script_path, *(args or [])]
+    if pypi_packages:
+        libs_target = _pip_libs_target(pypi_packages, pypi_index_urls)
+        ensure_writable_dir(libs_target.parent)
+        command = _container_command(command, pypi_packages, pypi_index_urls, libs_target)
+    job_env = {**await asyncio.to_thread(_job_api_env, True), **(env or {})}
 
     logger.info(f"Running job task in container: image={spark_image} command={command}")
-    return await asyncio.to_thread(_run_container_sync, spark_image, command, volumes, timeout_seconds, env)
+    return await asyncio.to_thread(_run_container_sync, spark_image, command, volumes, timeout_seconds, job_env)
 
 
 def _prepare_ivy_cache() -> str:

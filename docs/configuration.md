@@ -33,6 +33,8 @@ Everything is set through environment variables. Nothing needs a config file.
 | `MINILAKE_JOB_EXECUTOR` | `docker` | `subprocess` runs task scripts locally instead of in a Spark container |
 | `MINILAKE_SPARK_IMAGE` | `apache/spark:3.5.3-scala2.12-java17-python3-ubuntu` | Image used for `notebook_task` / `spark_python_task` |
 | `MINILAKE_DELTA_PACKAGE` | `io.delta:delta-spark_2.12:3.2.1` | Maven coordinate for the Delta jars. Must match the Spark version in the image |
+| `MINILAKE_JOB_API_URL` | derived | Address job tasks use to reach this minilake. Injected into every task as `DATABRICKS_HOST`, so `WorkspaceClient()` works with no arguments. Derived from minilake's own address on the job container's network (`http://127.0.0.1:<port>` with `MINILAKE_JOB_EXECUTOR=subprocess`); nothing is injected if it cannot be determined. Set it when minilake is not itself in Docker or sits behind a different address |
+| `MINILAKE_JOB_TOKEN` | `dapi-minilake` | Value injected into tasks as `DATABRICKS_TOKEN`. minilake has no auth, so any value works |
 | `MINILAKE_DOCKER_VOLUME` | unset | Named volume backing `MINILAKE_DATA_DIR`, shared with spawned job containers. Falls back to introspecting minilake's own mounts |
 | `MINILAKE_DOCKER_NETWORK` | unset | Network to attach job containers to, so a task can call back into the API. Falls back to introspection when minilake is on exactly one network |
 | `MINILAKE_IVY_SEED` | unset (`/opt/ivy-cache` in the image) | Pre-resolved Delta / Unity Catalog jars, copied onto the shared data volume on first job run so `spark-submit --packages` resolves without Maven Central |

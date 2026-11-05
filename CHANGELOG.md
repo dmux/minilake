@@ -8,6 +8,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Per-feature design rationale and known limitations live in [FEATURES.md](FEATURES.md);
 this file records what changed between releases.
 
+## [Unreleased]
+
+### Added
+
+- **PyPI libraries for job tasks.** `libraries[].pypi` is installed with
+  `pip install --target` in the job container and put on `PYTHONPATH`, so a script can
+  `import databricks.sdk` or any other package. Installs are cached on the data volume per
+  set of libraries, `repo` selects the index, and invalid specs fail the task
+  ([#95](https://github.com/dmux/minilake/issues/95)).
+- **Jobs can call minilake back.** Every task gets `DATABRICKS_HOST` and `DATABRICKS_TOKEN`
+  (`MINILAKE_JOB_API_URL`, `MINILAKE_JOB_TOKEN`), so `WorkspaceClient()` works inside a job
+  with no arguments ([#95](https://github.com/dmux/minilake/issues/95)).
+
 ## [1.9.2] — 2026-11-05
 
 Lets browser apps talk to minilake directly, keeps older Databricks SDKs and CLIs working
