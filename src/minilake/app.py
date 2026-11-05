@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import mimetypes
+import re
 import textwrap
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version
@@ -204,6 +205,50 @@ def _resolve_ui_dir() -> Path | None:
     return None
 
 
+_JOBS_ALIAS_RE = re.compile(r"^/api/2\.[01]/jobs(?=/|$)")
+
+
+class JobsApiVersionAliasMiddleware:
+    """Rewrite /api/2.0/jobs and /api/2.1/jobs to the /api/2.2/jobs router."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope["path"]
+            new_path = _JOBS_ALIAS_RE.sub("/api/2.2/jobs", path)
+            if new_path != path:
+                scope = dict(scope, path=new_path, raw_path=new_path.encode())
+        await self.app(scope, receive, send)
+
+
+class PrivateNetworkAccessMiddleware:
+    """Answer Chrome's Private Network Access preflights.
+
+    HTTPS pages calling a local server send ``Access-Control-Request-Private-Network``
+    and require ``Access-Control-Allow-Private-Network: true`` in the response.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        wants_pna = any(k == b"access-control-request-private-network" and v == b"true" for k, v in scope["headers"])
+
+        async def send_wrapper(message):
+            if wants_pna and message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"access-control-allow-private-network", b"true"))
+                message = dict(message, headers=headers)
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -219,15 +264,24 @@ def create_app() -> FastAPI:
     # Same-origin is the normal case (the UI is served from /ui by this same app);
     # this exists only so the UI's Next.js dev server on another port can reach the
     # API during development.
+    cors_origins = ["*"] if settings.dev_cors else list(settings.cors_origins)
     if settings.dev_cors:
         logger.warning("MINILAKE_DEV_CORS is set: allowing cross-origin API access from any origin")
+    if cors_origins:
+        logger.info(f"CORS enabled for origins: {cors_origins}")
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=cors_origins,
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )
+        # Registered after CORSMiddleware so it runs outermost and can decorate the
+        # preflight response CORSMiddleware generates.
+        app.add_middleware(PrivateNetworkAccessMiddleware)
+
+    # Older Databricks SDKs/CLIs call the Jobs API under /api/2.0 and /api/2.1.
+    app.add_middleware(JobsApiVersionAliasMiddleware)
 
     # Include admin router unconditionally
     app.include_router(admin_router)

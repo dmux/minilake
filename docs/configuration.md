@@ -16,6 +16,7 @@ Everything is set through environment variables. Nothing needs a config file.
 | `MINILAKE_DUCKDB_MEMORY_LIMIT` | `4GB` | DuckDB `memory_limit`, applied to every connection. Each database (the shared Unity Catalog one and each warehouse) gets its own limit. An invalid value stops startup |
 | `MINILAKE_STATEMENT_CACHE_SIZE` | `500` | How many executed statements to keep. Backs both `GET /statements/{id}` and query history; the oldest lose their rows first, then their metadata |
 | `MINILAKE_DEV_CORS` | unset | `1` allows cross-origin API access, for running the web UI's Next.js dev server on another port. Leave off otherwise — minilake has no authentication ([Web UI](ui.md#development)) |
+| `MINILAKE_CORS_ORIGINS` | unset | Comma-separated browser origins allowed to call the API cross-origin, e.g. `http://localhost:3000` (`*` allows any). Also answers Chrome Private Network Access preflights. Use it to let an external web app such as OpenArchFlow reach minilake. minilake has no authentication, so only list origins you trust |
 | `MINILAKE_DUCKDB_EXTENSION_DIR` | unset (`/opt/duckdb-extensions` in the image) | Directory of pre-installed DuckDB extensions. When set, the server only `LOAD`s the `delta` extension and never downloads it, which is what makes the image work with no internet access |
 
 ### Persistence
